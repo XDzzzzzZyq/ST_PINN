@@ -18,6 +18,11 @@ class PatchDataset(Dataset):
         return len(self.patches)
 
     def __getitem__(self, idx):
+        '''
+        [In_tissue, Total, G1, G2, ...] 
+        shape : 1+1+N, W, H 
+        '''
+
         patch = random.choice(self.patches)
         data = train.load_data(patch)
         import pandas as pd
@@ -31,7 +36,7 @@ class PatchDataset(Dataset):
         df_in_tissue = sthdviz.rasterize_numerical(df, 'in_tissue')
         df_n_counts = sthdviz.rasterize_numerical(df, 'n_counts')
         
-        block = np.stack([df_rasterize, df_in_tissue, df_n_counts], axis=0)
+        block = np.stack([df_in_tissue, df_n_counts, df_rasterize], axis=0)
         block = torch.from_numpy(block)
         return self.transform(block), 0
 
@@ -56,14 +61,16 @@ class Poisson:
         self.ratio = ratio
 
     def __call__(self, img):
-        return torch.poisson(img * self.ratio)
+        counts = torch.poisson(img * self.ratio)
+        bounds = img
+        return torch.cat([img, counts, counts], dim=0)
 
 def get_dataset(config):
 
     # Compute batch size for this worker.
     batch_size = config.training.batch_size
     if batch_size % torch.cuda.device_count() != 0:
-        raise ValueError(f'Batch sizes ({batch_size} must be divided by'
+        raise ValueError(f'Batch sizes {batch_size} must be divided by'
                          f'the number of devices ({torch.cuda.device_count()})')
 
     # Reduce this when image resolution is too large and data pointer is stored
@@ -77,6 +84,7 @@ def get_dataset(config):
                                         Poisson(config.data.poisson_ratio),
                                         transforms.RandomHorizontalFlip(),
                                         transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])
+                                        # TODO: Separate the blurring 
 
         train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
         test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
@@ -115,3 +123,4 @@ if __name__ == '__main__':
     fig, axe = plt.subplots(nrows=1, ncols=4, figsize=(25, 25))
     for i in range(4):
         axe[i].imshow(data[i, 0].cpu(), interpolation='nearest')
+    plt.show()

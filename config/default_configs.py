@@ -17,22 +17,25 @@ def get_default_configs():
 
     data.field = ['EPCAM'] # for Visium HD data
     data.path = '../STHD/analysis/exp1_full_patchify/patches/'
+
+    if data.dataset == 'MNIST':
+        data.field = ['Fake']
     
     # training 
     config.training = training = ml_collections.ConfigDict()
     training.batch_size = 64
     training.sample_per_sol = 32
-    training.dt = 0.0005
-    training.stride = 1
+    training.sub_step = 1
     
-    training.n_iters = 50000
-    training.snapshot_freq = 10000
-    training.log_freq = 500
-    training.eval_freq = 100
-    training.snapshot_freq_save = 25000 # will not overwrite
+    training.n_iters = 500
+    training.snapshot_freq = 100
+    training.snapshot_freq_for_preemption = 250
+    training.log_freq = 1
+    training.eval_freq = 5
+    training.snapshot_freq_save = 250       # will not overwrite
     
     config.model = model = ml_collections.ConfigDict()
-    model.ema_rate = 0.9999
+    model.ema_rate = 0.99
     model.normalization = 'GroupNorm'
     model.nonlinearity = 'swish'
     model.nf = 32
@@ -51,6 +54,7 @@ def get_default_configs():
     param.t0 = 0
     param.t1 = 0.1
     param.t2 = 1
+    param.dt = 0.0005
     param.dx = 1/200
     
     param.use_vel = True
@@ -71,7 +75,10 @@ def get_default_configs():
     optim.lr = 2e-4
     optim.beta1 = 0.9
     optim.eps = 1e-8
-    optim.warmup = 5000
+    optim.warmup = 0
     optim.grad_clip = 1.
 
     return config
+
+def get_config():
+    return get_default_configs()

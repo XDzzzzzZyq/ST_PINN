@@ -15,11 +15,13 @@ flags.DEFINE_enum("mode", None, ["train", 'deblur', "eval"],
                   "Running mode: train or eval or deblur")
 flags.DEFINE_string("eval_folder", "eval", "The folder name for storing evaluation results")
 flags.DEFINE_string("data_folder", None, "The folder name for training patches")
-flags.mark_flags_as_required(["workdir", "config", "mode", "data_folder"])
+flags.mark_flags_as_required(["workdir", "config", "mode"])
 
 
 def main(argv):
     if FLAGS.mode == "train":
+        from train import train
+
         # Create the working directory
         os.makedirs(FLAGS.workdir, exist_ok=True)
         # Set logger so that it outputs to both console and file
@@ -32,10 +34,13 @@ def main(argv):
         logger.addHandler(handler)
         logger.setLevel('INFO')
         # Run the training pipeline
-
+        train(FLAGS.config, FLAGS.workdir)
     elif FLAGS.mode == "eval":
-        # Run the evaluation pipeline
+        # TODO: Evaluation pipeline
+        pass
     elif FLAGS.mode == "deblur":
+        # TODO: Diffusion removal pipeline
+        pass
     else:
         raise ValueError(f"Mode {FLAGS.mode} not recognized.")
 
