@@ -49,8 +49,8 @@ def train(config, workdir):
 
     # Build data iterators
     train_ds, eval_ds = datasets.get_dataset(config)
-    train_iter = iter(train_ds)  # pytype: disable=wrong-arg-types
-    eval_iter = iter(eval_ds)  # pytype: disable=wrong-arg-types
+    train_iter = iter(train_ds)     # pytype: disable=wrong-arg-types
+    eval_iter = iter(eval_ds)       # pytype: disable=wrong-arg-types
 
     # Build one-step training and evaluation functions
     optimize_fn = losses.get_optimize_fn(config)
@@ -71,11 +71,11 @@ def train(config, workdir):
 
         batch = batch.to(config.device).float()
         in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
-        N = genes.shape[1]                      # TODO: conditioning info
+        N = genes.shape[1]                      # TODO: flatten all multi-genes
         # Execute one training step
         samples = simulator.simulate(genes, in_tissue)
         for sample in samples:
-            loss = train_step_fn(state, sample) # TODO: flatten all multi-genes
+            loss = train_step_fn(state, sample) # TODO: conditioning info
 
         if step % config.training.log_freq == 0:
             logging.info("step: %d, training_loss: %.5e" % (step, loss.item()))
@@ -93,9 +93,9 @@ def train(config, workdir):
                 eval_iter = iter(eval_ds)
             batch = batch.to(config.device).float()
             in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
-            N = genes.shape[1]                      # TODO: conditioning info
+            N = genes.shape[1]                      # TODO: flatten all multi-genes
             samples = simulator.simulate(genes, in_tissue)
-            eval_loss = eval_step_fn(state, samples[0])
+            eval_loss = eval_step_fn(state, samples[0]) # TODO: conditioning info
             logging.info("step: %d, eval_loss: %.5e" % (step, eval_loss.item()))
             writer.add_scalar("eval_loss", eval_loss.item(), step)
 

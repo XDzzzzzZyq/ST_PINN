@@ -481,11 +481,11 @@ class ResidualBlock(nn.Module):
 #  https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py
 ###########################################################################
 
-def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
+def get_timestep_embedding(timesteps, embedding_dim, max_time):
     assert len(timesteps.shape) == 1  # and timesteps.dtype == tf.int32
     half_dim = embedding_dim // 2
     # magic number 10000 is from transformers
-    emb = math.log(max_positions) / (half_dim - 1)
+    emb = math.log(max_time + 1) / (half_dim - 1)
     # emb = math.log(2.) / (half_dim - 1)
     emb = torch.exp(torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -emb)
     # emb = tf.range(num_embeddings, dtype=jnp.float32)[:, None] * emb[None, :]
@@ -637,3 +637,9 @@ class ResnetBlockDDPM(nn.Module):
             else:
                 x = self.NIN_0(x)
         return x + h
+
+if __name__ == '__main__':
+    t = torch.linspace(0.1, 1, 1000)
+    print(t)
+    t_emb = get_timestep_embedding(t, 10, 1)
+    print(t_emb.shape)

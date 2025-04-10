@@ -56,6 +56,13 @@ def get_up_layer(in_channels, out_channels):
         nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
         )
 
+def get_fc_layer(in_channels, out_channels):
+    return nn.Sequential(
+            nn.Linear(in_channels, in_channels),
+            nn.ReLU(),
+            nn.Linear(in_channels, out_channels)
+        )
+
 class Unet(nn.Module):
     def __init__(self, config):
         super(Unet, self).__init__()
@@ -63,23 +70,30 @@ class Unet(nn.Module):
         self.channels = channels = config.model.level_feature_nums
         self.num_features = len(config.data.field)
         self.first = get_double_res(self.num_features, channels[0])
+        self.temb_first = get_fc_layer(32, 32)
 
         ch_i = channels[0]
         self.down = []
+        self.temb_down = []
         for ch_o in channels[1:]:
             self.down.append(get_down_layer(ch_i, ch_o))
+            self.temb_down.append(get_fc_layer(32, ch_o))
             ch_i = ch_o
         self.down = nn.ModuleList(self.down)
+        self.temb_down = nn.ModuleList(self.temb_down)
 
         ch_i = channels[-1]
         self.up = []
         self.up_conv = []
+        self.temb_up = []
         for ch_o in channels[-2::-1]:
+            self.temb_up.append(get_fc_layer(32, ch_i))
             self.up.append(get_up_layer(ch_i, ch_o))
             self.up_conv.append(get_double_res(ch_o*2, ch_o, 4))
             ch_i = ch_o
         self.up = nn.ModuleList(self.up)
         self.up_conv = nn.ModuleList(self.up_conv)
+        self.temb_up = nn.ModuleList(self.temb_up)
 
         self.end = nn.Sequential(
             get_double_res(channels[0], channels[0] // 2),
@@ -90,14 +104,15 @@ class Unet(nn.Module):
 
     def forward(self, x, t):
 
-        temb = layers.get_timestep_embedding(t, 1)[:,:,None,None]
+        temb = layers.get_timestep_embedding(t, 32, 1.0)
+        temb = self.temb_first(temb)
 
-        x = x + temb
         x = self.first(x)
         features = [x]
 
-        for down in self.down:
+        for down, temb_down in zip(self.down, self.temb_down):
             x = down(x)
+            x = x + temb_down(temb)[:, :, None, None]
             features.append(x)
         features.pop(-1)
 
@@ -106,7 +121,9 @@ class Unet(nn.Module):
 
             up = self.up[idx]
             up_conv = self.up_conv[idx]
+            temb_up = self.temb_up[idx] 
 
+            x = x + temb_up(temb)[:, :, None, None]
             x = up(x)
             block = torch.cat([feature, x], dim=1)
             x = up_conv(block)

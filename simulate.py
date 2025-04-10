@@ -41,15 +41,13 @@ class Simulator:
             v, dv_dx, dv_dy = ns_step.update_velocity(v, dv_dx, dv_dy, p, dt, dx, Re)
             # v = ns_step.vorticity_confinement(v, 1.0, dt, dx) # TODO: stability
             p = ns_step.update_pressure(p, v, dt, dx)
-            f, df_dx, df_dy = ns_step.update_density(f, df_dx, df_dy, v, dt, dx, Re)
-            dfx, dfy = ns_step.diff(f, dx)
+            f, df_dx, df_dy, df_dt = ns_step.update_density(f, df_dx, df_dy, v, dt, dx, Re)
 
-            if torch.isnan(f).any():
+            if torch.isnan(df_dt).any():
                 print(f"nan detacted at step {idx} : {t}, total sample: {len(result)}")
                 return result
 
             if idx in sample_at:
-                result.append(self.State(t[None].to(f.device), f, v, p, dfx)) # TODO: get dfdt
+                result.append(self.State(t[None].to(f.device), f, v, p, df_dt))
 
         return result
-

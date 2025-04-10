@@ -15,8 +15,8 @@ def diff(dens, dx):
     return ns_step_forward.diff(dens, dx)
 
 def update_density(dens, df_dx, df_dy, vel, dt, dx, Re=10000000.0):
-    dens_n = ns_step_forward.update_density(dens, df_dx, df_dy, vel, dt, dx, Re)
-    return dens_n
+    f_n, df_dx, df_dy = ns_step_forward.update_density(dens, df_dx, df_dy, vel, dt, dx, Re)
+    return f_n, df_dx, df_dy, (f_n - dens) / dt
 
 def update_velocity(vel, dv_dx, dv_dy, pres, dt, dx, Re=10000000.0):
     vel_n = ns_step_forward.update_velocity(vel, dv_dx, dv_dy, pres, dt, dx, Re)

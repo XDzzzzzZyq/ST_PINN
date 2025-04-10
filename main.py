@@ -18,8 +18,8 @@ flags.DEFINE_string("data_folder", None, "The folder name for training patches")
 flags.mark_flags_as_required(["workdir", "config", "mode"])
 
 
-def main(argv):
-    if FLAGS.mode == "train":
+def main(argv):                         # tensorboard --logdir=workdir/test/tensorboard
+    if FLAGS.mode == "train":           # python main.py --config config/default_configs.py --mode train --workdir workdir/test
         from train import train
 
         # Create the working directory
