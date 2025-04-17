@@ -57,16 +57,17 @@ def get_step_fn(simulator, train, optimize_fn=None):
     distance = torch.nn.MSELoss()
 
     # Simulation & Parameter space sampling
-    def loss_fn(model, sample): # TODO: conditioning info
+    def loss_fn(model, sample, info):
         if train:
             model.train()
         else:
             model.eval()        
 
-        pred = model(sample.p, sample.t)
-        return distance(pred, sample.dfdt)
+        x = torch.cat([*info, sample.f], dim=1)
+        pred = model(x, sample.t)
+        return distance(pred, sample.df_dt)
 
-    def step_fn(state, batch):
+    def step_fn(state, sample, info):
         """Running one step of training or evaluation.
 
         This function will undergo `jax.lax.scan` so that multiple steps can be pmapped and jit-compiled together
@@ -75,7 +76,7 @@ def get_step_fn(simulator, train, optimize_fn=None):
         Args:
           state: A dictionary of training information, containing the score model, optimizer,
            EMA status, and number of optimization steps.
-          batch: A mini-batch of training/evaluation data.
+          sample: A mini-sample of training/evaluation data.
 
         Returns:
           loss: The average loss value of this state.
@@ -84,7 +85,7 @@ def get_step_fn(simulator, train, optimize_fn=None):
         if train:
             optimizer = state['optimizer']
             optimizer.zero_grad()
-            loss = loss_fn(model, batch)
+            loss = loss_fn(model, sample, info)
             loss.backward()
             optimize_fn(optimizer, model.parameters(), step=state['step'])
             state['step'] += 1
@@ -94,7 +95,7 @@ def get_step_fn(simulator, train, optimize_fn=None):
                 ema = state['ema']
                 ema.store(model.parameters())
                 ema.copy_to(model.parameters())
-                loss = loss_fn(model, batch)
+                loss = loss_fn(model, sample, info)
                 ema.restore(model.parameters())
 
         return loss

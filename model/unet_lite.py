@@ -68,7 +68,7 @@ class Unet(nn.Module):
         super(Unet, self).__init__()
 
         self.channels = channels = config.model.level_feature_nums
-        self.num_features = len(config.data.field)
+        self.num_features = len(config.data.field) + 2 # Boundary and Total Count
         self.first = get_double_res(self.num_features, channels[0])
         self.temb_first = get_fc_layer(32, 32)
 

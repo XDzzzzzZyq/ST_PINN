@@ -29,13 +29,13 @@ def get_default_configs():
     
     training.n_iters = 500
     training.snapshot_freq = 100
-    training.snapshot_freq_for_preemption = 250
+    training.snapshot_freq_for_preemption = 50
     training.log_freq = 1
     training.eval_freq = 5
     training.snapshot_freq_save = 250       # will not overwrite
     
     config.model = model = ml_collections.ConfigDict()
-    model.ema_rate = 0.99
+    model.ema_rate = 0.8
     model.normalization = 'GroupNorm'
     model.nonlinearity = 'swish'
     model.nf = 32
@@ -72,7 +72,7 @@ def get_default_configs():
     config.optim = optim = ml_collections.ConfigDict()
     optim.weight_decay = 0
     optim.optimizer = 'Adam'
-    optim.lr = 2e-3
+    optim.lr = 2e-4
     optim.beta1 = 0.9
     optim.eps = 1e-8
     optim.warmup = 0

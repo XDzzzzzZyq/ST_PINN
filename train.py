@@ -24,6 +24,7 @@ def train(config, workdir):
         workdir: Working directory for checkpoints and TF summaries. If this
         contains checkpoint training will be resumed from the latest checkpoint.
     """
+    torch.manual_seed(config.seed)
 
     # Create directories for experimental logs
     tb_dir = os.path.join(workdir, "tensorboard")
@@ -72,10 +73,13 @@ def train(config, workdir):
         batch = batch.to(config.device).float()
         in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
         N = genes.shape[1]                      # TODO: flatten all multi-genes
+        info = (in_tissue, total)
         # Execute one training step
         samples = simulator.simulate(genes, in_tissue)
+        loss = 0
         for sample in samples:
-            loss = train_step_fn(state, sample) # TODO: conditioning info
+            loss += train_step_fn(state, sample, info)
+        loss /= config.training.sample_per_sol
 
         if step % config.training.log_freq == 0:
             logging.info("step: %d, training_loss: %.5e" % (step, loss.item()))
@@ -94,8 +98,12 @@ def train(config, workdir):
             batch = batch.to(config.device).float()
             in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
             N = genes.shape[1]                      # TODO: flatten all multi-genes
+            info = (in_tissue, total)
             samples = simulator.simulate(genes, in_tissue)
-            eval_loss = eval_step_fn(state, samples[0]) # TODO: conditioning info
+            eval_loss = 0
+            for sample in samples:
+                eval_loss += eval_step_fn(state, sample, info)
+            eval_loss /= config.training.sample_per_sol
             logging.info("step: %d, eval_loss: %.5e" % (step, eval_loss.item()))
             writer.add_scalar("eval_loss", eval_loss.item(), step)
 
@@ -105,3 +113,46 @@ def train(config, workdir):
             save_step = step // config.training.snapshot_freq
             save_checkpoint(os.path.join(checkpoint_dir, f'checkpoint_{save_step}.pth'), state)
             print(f">>> checkpoint_{save_step}.pth saved")
+
+
+if __name__ == '__main__':
+
+    import datasets
+    from config.default_configs import get_default_configs
+    config = get_default_configs()
+
+    checkpoint_meta_dir = os.path.join("workdir/test", "checkpoints", "checkpoint_1.pth")
+    simulator = Simulator(config)
+    model = unet_lite.Unet(config).to(config.device)
+    simulator = Simulator(config)
+    ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
+    optimizer = losses.get_optimizer(config, model.parameters())
+    state = dict(optimizer=optimizer, model=model, ema=ema, step=0)
+    state = restore_checkpoint(checkpoint_meta_dir, state, config.device)
+
+    train_ds, eval_ds = datasets.get_dataset(config)
+    train_iter = iter(train_ds)
+    batch, target = next(train_iter)
+
+    batch = batch.to(config.device).float()
+    in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
+    samples = simulator.simulate(genes, in_tissue)
+
+    for idx, sample in enumerate(samples):
+        t, f, v, p, df_dt = sample.get()
+        with torch.no_grad():
+            pred = model(f, t)
+
+        import matplotlib.pyplot as plt
+        fig, axe = plt.subplots(nrows=2, ncols=4, figsize=(30, 10))
+        axe[0][0].imshow(f[0, 0].cpu())
+        axe[0][1].imshow(v[0, 0].cpu())
+        axe[0][2].imshow(v[0, 1].cpu())
+        axe[0][3].imshow(p[0, 0].cpu())
+
+        axe[1][0].imshow(df_dt[0, 0].cpu())
+        axe[1][1].imshow(pred[0, 0].cpu())
+        axe[1][2].imshow(in_tissue[0, 0].cpu())
+        axe[1][3].imshow(total[0, 0].cpu())
+
+        plt.savefig(f"plots/simulate/simulate i={idx+1} | t={t.item():.2f}.png")
