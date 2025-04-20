@@ -5,30 +5,6 @@ import functools
 
 from . import layers
 
-def get_conv_feature_layer(in_channels, out_channels):
-    layer = torch.nn.Sequential(
-                    torch.nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=2, padding=1),
-                    torch.nn.LeakyReLU(inplace=False, negative_slope=0.1),
-                    torch.nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1),
-                    torch.nn.LeakyReLU(inplace=False, negative_slope=0.1))
-    return layer
-
-def get_conv_decode_layer(in_channels, out_channels):
-    layer = torch.nn.Sequential(
-                    torch.nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1),
-                    torch.nn.LeakyReLU(inplace=False, negative_slope=0.1))
-    return layer
-
-def get_conv_field_layer(in_channels, out_channels):
-    layer = torch.nn.Sequential(torch.nn.Conv2d(in_channels=in_channels, out_channels=128, kernel_size=3, stride=1, padding=1),
-        torch.nn.LeakyReLU(inplace=False, negative_slope=0.1),
-        torch.nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
-        torch.nn.LeakyReLU(inplace=False, negative_slope=0.1),
-        torch.nn.Conv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1),
-        torch.nn.LeakyReLU(inplace=False, negative_slope=0.1),
-        torch.nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=3, stride=1, padding=1))
-    return layer
-
 def get_conv_up_layer(out_channels):
     layer = torch.nn.Sequential(torch.nn.Conv2d(in_channels=2+out_channels, out_channels=64, kernel_size=3, stride=1, padding=1),
         torch.nn.LeakyReLU(inplace=False, negative_slope=0.1),
@@ -51,6 +27,13 @@ def get_down_layer(in_channels, out_channels):
     )
     return layer
 
+def get_mid_layer(in_channels):
+    return nn.Sequential(
+        layers.ResidualBlock(in_channels, in_channels),
+        layers.AttnBlock(in_channels),
+        layers.ResidualBlock(in_channels, in_channels),
+        )
+
 def get_up_layer(in_channels, out_channels):
     return nn.Sequential(
         nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
@@ -68,7 +51,9 @@ class Unet(nn.Module):
         super(Unet, self).__init__()
 
         self.channels = channels = config.model.level_feature_nums
-        self.num_features = len(config.data.field) + 2 # Boundary and Total Count
+        self.num_features = len(config.data.field) 
+        if config.model.conditional:
+            self.num_features += 2# Boundary and Total Count
         self.first = get_double_res(self.num_features, channels[0])
         self.temb_first = get_fc_layer(32, 32)
 
@@ -81,6 +66,8 @@ class Unet(nn.Module):
             ch_i = ch_o
         self.down = nn.ModuleList(self.down)
         self.temb_down = nn.ModuleList(self.temb_down)
+
+        self.mid = get_mid_layer(ch_i)
 
         ch_i = channels[-1]
         self.up = []
@@ -115,6 +102,8 @@ class Unet(nn.Module):
             x = x + temb_down(temb)[:, :, None, None]
             features.append(x)
         features.pop(-1)
+        
+        x = self.mid(x)
 
         for idx in range(len(features)):
             feature = features[-1-idx]

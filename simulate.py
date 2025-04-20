@@ -1,14 +1,17 @@
 from op import ns_step
 import torch
-import random
+import random, math
 
 class NODE(torch.nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, info=None):
         super(NODE, self).__init__()
         self.model = model
+        self.info = info
     def forward(self, t, f):
         if t.ndim == 0:
             t = t.unsqueeze(0)
+        if self.info is not None:
+            f = torch.cat([*self.info, f], dim=1)
         return self.model(f, t.to(f.device))
 
 class Simulator:
@@ -41,10 +44,12 @@ class Simulator:
         sample_at = torch.randperm(num_steps)[:self.sample_per_sol]
 
         f = genes                                   # TODO: flatten all multi-genes
-        v = (1-in_tissue).repeat(1,2,1,1) * 0.001   # TODO: Random sampling
-        p = in_tissue * 0.001
+        v = (1-in_tissue).repeat(1,2,1,1) * random.uniform(self.param.v_min, self.param.v_max)
+        p = in_tissue * random.uniform(self.param.p_min, self.param.p_max)
 
-        dt, dx, Re = self.param.dt, self.param.dx, self.param.Re_min
+        # TODO: Spatially variate Re 
+        Re = math.exp(random.uniform(math.log(self.param.Re_min), math.log(self.param.Re_max)))
+        dt, dx = self.param.dt, self.param.dx
         df_dx, df_dy = ns_step.diff(f, dx)
         dv_dx, dv_dy = ns_step.diff(v, dx)
         
@@ -67,13 +72,13 @@ class Simulator:
             random.shuffle(result)
         return result
     
-    def reverse(self, model, f1, t1):
+    def reverse(self, model, state, info):
         from torchdiffeq import odeint
 
-        t = torch.linspace(t1.item(), self.param.t0, 3)
-        node = NODE(model)
+        t = torch.linspace(state.t.item(), self.param.t0, 3)
+        node = NODE(model, info)
         with torch.no_grad():
-            sol = odeint(node, f1, t, rtol=1e-7, atol=1e-9)
+            sol = odeint(node, state.f, t, rtol=1e-7, atol=1e-9)
             return sol
 
 if __name__ == '__main__':

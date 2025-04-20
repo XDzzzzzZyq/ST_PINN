@@ -73,13 +73,14 @@ def train(config, workdir):
         batch = batch.to(config.device).float()
         in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
         N = genes.shape[1]                      # TODO: flatten all multi-genes
-        info = (in_tissue, total)
+        info = (in_tissue, total) if config.model.conditional else None
         # Execute one training step
         samples = simulator.simulate(genes, in_tissue)
         loss = 0
         for sample in samples:
             loss += train_step_fn(state, sample, info)
         loss /= config.training.sample_per_sol
+        state['step'] += 1
 
         if step % config.training.log_freq == 0:
             logging.info("step: %d, training_loss: %.5e" % (step, loss.item()))
@@ -98,7 +99,7 @@ def train(config, workdir):
             batch = batch.to(config.device).float()
             in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
             N = genes.shape[1]                      # TODO: flatten all multi-genes
-            info = (in_tissue, total)
+            info = (in_tissue, total) if config.model.conditional else None
             samples = simulator.simulate(genes, in_tissue)
             eval_loss = 0
             for sample in samples:
@@ -121,7 +122,7 @@ if __name__ == '__main__':
     from config.default_configs import get_default_configs
     config = get_default_configs()
 
-    checkpoint_meta_dir = os.path.join("workdir/test", "checkpoints-meta", "checkpoint.pth")
+    checkpoint_meta_dir = os.path.join("workdir/large", "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
     model = unet_lite.Unet(config).to(config.device)
     simulator = Simulator(config)
@@ -135,22 +136,26 @@ if __name__ == '__main__':
 
     batch = batch.to(config.device).float()
     in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
-    samples = simulator.simulate(genes, in_tissue)
+    samples = simulator.simulate(genes, in_tissue, shuffle=False)
+    info = (in_tissue, total) if config.model.conditional else None
 
-    if True:
-        state = samples[0]
+    if False:
+        state = samples[-1]
         print(state.t.item())
-        sol = simulator.reverse(model, state.f, state.t)
+        sol = simulator.reverse(model, state, info)
 
         import matplotlib.pyplot as plt
-        fig, axe = plt.subplots(nrows=1, ncols=len(sol), figsize=(30, 10))
-        for i, ax in enumerate(axe):
-            ax.imshow(sol[i][0, 0].cpu())
+        fig, axe = plt.subplots(nrows=1, ncols=len(sol)+1, figsize=(40, 10))
+        for i in range(len(sol)):
+            axe[i].imshow(sol[i][0, 0].cpu())
+        axe[-1].imshow(total[0, 0].cpu())
 
         plt.savefig(f"plots/reverse/reverse | t={state.t.item():.2f}.png")
     else:
         for idx, sample in enumerate(samples):
             t, f, v, p, df_dt = sample.get()
+            if info is not None:
+                f = torch.cat([*info, f], dim=1)
             with torch.no_grad():
                 pred = model(f, t)
 
@@ -163,7 +168,7 @@ if __name__ == '__main__':
 
             axe[1][0].imshow(df_dt[0, 0].cpu())
             axe[1][1].imshow(pred[0, 0].cpu())
-            axe[1][2].imshow((df_dt[0, 0]-pred[0, 0]).cpu())
+            axe[1][2].imshow(in_tissue[0, 0].cpu())
             axe[1][3].imshow(total[0, 0].cpu())
 
-            plt.savefig(f"plots/simulate/simulate i={idx+1} | t={t.item():.2f}.png")
+            plt.savefig(f"plots/simulate2/simulate i={idx+1} | t={t.item():.2f}.png")

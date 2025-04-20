@@ -35,7 +35,7 @@ def get_default_configs():
     training.snapshot_freq_save = 250       # will not overwrite
     
     config.model = model = ml_collections.ConfigDict()
-    model.ema_rate = 0.8
+    model.ema_rate = 0.95
     model.normalization = 'GroupNorm'
     model.nonlinearity = 'swish'
     model.nf = 32
@@ -51,9 +51,9 @@ def get_default_configs():
     
     # parameters
     config.param = param = ml_collections.ConfigDict()
-    param.t0 = 0
-    param.t1 = 0.1
-    param.t2 = 1
+    param.t0 = 0.0
+    param.t1 = 0.05
+    param.t2 = 1.0
     param.dt = 0.0005
     param.dx = 1/200
     
@@ -65,18 +65,18 @@ def get_default_configs():
     param.p_min = 0.0
     param.p_max = 0.001
     
-    param.Re_min = 10000.0
-    param.Re_man = 1000000.0
+    param.Re_min = 1000.0
+    param.Re_max = 10000.0
     
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
     optim.weight_decay = 0
     optim.optimizer = 'Adam'
-    optim.lr = 2e-4
+    optim.lr = 1e-4
     optim.beta1 = 0.9
     optim.eps = 1e-8
     optim.warmup = 0
-    optim.grad_clip = 1.
+    optim.grad_clip = 5.
 
     return config
 

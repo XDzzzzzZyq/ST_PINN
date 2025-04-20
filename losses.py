@@ -63,9 +63,12 @@ def get_step_fn(simulator, train, optimize_fn=None):
         else:
             model.eval()        
 
-        x = torch.cat([*info, sample.f], dim=1)
+        x = sample.f
+        if info is not None:
+            x = torch.cat([*info, sample.f], dim=1)
+            
         pred = model(x, sample.t)
-        return distance(pred, sample.df_dt)
+        return distance(pred, sample.df_dt) + pred.mean(dim=(1,2,3)).square().mean()
 
     def step_fn(state, sample, info):
         """Running one step of training or evaluation.
@@ -88,7 +91,6 @@ def get_step_fn(simulator, train, optimize_fn=None):
             loss = loss_fn(model, sample, info)
             loss.backward()
             optimize_fn(optimizer, model.parameters(), step=state['step'])
-            state['step'] += 1
             state['ema'].update(model.parameters())
         else:
             with torch.no_grad():
