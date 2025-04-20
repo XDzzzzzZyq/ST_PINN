@@ -121,7 +121,7 @@ if __name__ == '__main__':
     from config.default_configs import get_default_configs
     config = get_default_configs()
 
-    checkpoint_meta_dir = os.path.join("workdir/test", "checkpoints", "checkpoint_1.pth")
+    checkpoint_meta_dir = os.path.join("workdir/test", "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
     model = unet_lite.Unet(config).to(config.device)
     simulator = Simulator(config)
@@ -131,28 +131,39 @@ if __name__ == '__main__':
     state = restore_checkpoint(checkpoint_meta_dir, state, config.device)
 
     train_ds, eval_ds = datasets.get_dataset(config)
-    train_iter = iter(train_ds)
-    batch, target = next(train_iter)
+    batch, target = next(iter(eval_ds))
 
     batch = batch.to(config.device).float()
     in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
     samples = simulator.simulate(genes, in_tissue)
 
-    for idx, sample in enumerate(samples):
-        t, f, v, p, df_dt = sample.get()
-        with torch.no_grad():
-            pred = model(f, t)
+    if True:
+        state = samples[0]
+        print(state.t.item())
+        sol = simulator.reverse(model, state.f, state.t)
 
         import matplotlib.pyplot as plt
-        fig, axe = plt.subplots(nrows=2, ncols=4, figsize=(30, 10))
-        axe[0][0].imshow(f[0, 0].cpu())
-        axe[0][1].imshow(v[0, 0].cpu())
-        axe[0][2].imshow(v[0, 1].cpu())
-        axe[0][3].imshow(p[0, 0].cpu())
+        fig, axe = plt.subplots(nrows=1, ncols=len(sol), figsize=(30, 10))
+        for i, ax in enumerate(axe):
+            ax.imshow(sol[i][0, 0].cpu())
 
-        axe[1][0].imshow(df_dt[0, 0].cpu())
-        axe[1][1].imshow(pred[0, 0].cpu())
-        axe[1][2].imshow(in_tissue[0, 0].cpu())
-        axe[1][3].imshow(total[0, 0].cpu())
+        plt.savefig(f"plots/reverse/reverse | t={state.t.item():.2f}.png")
+    else:
+        for idx, sample in enumerate(samples):
+            t, f, v, p, df_dt = sample.get()
+            with torch.no_grad():
+                pred = model(f, t)
 
-        plt.savefig(f"plots/simulate/simulate i={idx+1} | t={t.item():.2f}.png")
+            import matplotlib.pyplot as plt
+            fig, axe = plt.subplots(nrows=2, ncols=4, figsize=(30, 10))
+            axe[0][0].imshow(f[0, 0].cpu())
+            axe[0][1].imshow(v[0, 0].cpu())
+            axe[0][2].imshow(v[0, 1].cpu())
+            axe[0][3].imshow(p[0, 0].cpu())
+
+            axe[1][0].imshow(df_dt[0, 0].cpu())
+            axe[1][1].imshow(pred[0, 0].cpu())
+            axe[1][2].imshow((df_dt[0, 0]-pred[0, 0]).cpu())
+            axe[1][3].imshow(total[0, 0].cpu())
+
+            plt.savefig(f"plots/simulate/simulate i={idx+1} | t={t.item():.2f}.png")

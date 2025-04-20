@@ -2,6 +2,15 @@ from op import ns_step
 import torch
 import random
 
+class NODE(torch.nn.Module):
+    def __init__(self, model):
+        super(NODE, self).__init__()
+        self.model = model
+    def forward(self, t, f):
+        if t.ndim == 0:
+            t = t.unsqueeze(0)
+        return self.model(f, t.to(f.device))
+
 class Simulator:
     class State:
         def __init__(self,
@@ -57,6 +66,15 @@ class Simulator:
         if shuffle:
             random.shuffle(result)
         return result
+    
+    def reverse(self, model, f1, t1):
+        from torchdiffeq import odeint
+
+        t = torch.linspace(t1.item(), self.param.t0, 3)
+        node = NODE(model)
+        with torch.no_grad():
+            sol = odeint(node, f1, t, rtol=1e-7, atol=1e-9)
+            return sol
 
 if __name__ == '__main__':
 
