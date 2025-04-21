@@ -121,6 +121,7 @@ if __name__ == '__main__':
     import datasets
     from config.default_configs import get_default_configs
     config = get_default_configs()
+    config.training.batch_size = 1
 
     checkpoint_meta_dir = os.path.join("workdir/large", "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
@@ -154,10 +155,11 @@ if __name__ == '__main__':
     else:
         for idx, sample in enumerate(samples):
             t, f, v, p, df_dt = sample.get()
+            x = f
             if info is not None:
-                f = torch.cat([*info, f], dim=1)
+                x = torch.cat([*info, x], dim=1)
             with torch.no_grad():
-                pred = model(f, t)
+                pred = model(x, t)
 
             import matplotlib.pyplot as plt
             fig, axe = plt.subplots(nrows=2, ncols=4, figsize=(30, 10))
@@ -171,4 +173,5 @@ if __name__ == '__main__':
             axe[1][2].imshow(in_tissue[0, 0].cpu())
             axe[1][3].imshow(total[0, 0].cpu())
 
-            plt.savefig(f"plots/simulate2/simulate i={idx+1} | t={t.item():.2f}.png")
+            plt.savefig(f"plots/normalized/simulate i={idx+1} | t={t.item():.2f}.png")
+            plt.close()

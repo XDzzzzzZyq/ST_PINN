@@ -88,7 +88,7 @@ def get_step_fn(simulator, train, optimize_fn=None):
         if train:
             optimizer = state['optimizer']
             optimizer.zero_grad()
-            loss = loss_fn(model, sample, info)
+            loss = loss_fn(model, sample, info) * (sample.t ** 2) * 1e2   # Loss normalization
             loss.backward()
             optimize_fn(optimizer, model.parameters(), step=state['step'])
             state['ema'].update(model.parameters())
