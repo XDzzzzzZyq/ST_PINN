@@ -55,8 +55,8 @@ def train(config, workdir):
 
     # Build one-step training and evaluation functions
     optimize_fn = losses.get_optimize_fn(config)
-    train_step_fn = losses.get_step_fn(simulator, train=True, optimize_fn=optimize_fn)
-    eval_step_fn = losses.get_step_fn(simulator, train=False)
+    train_step_fn = losses.get_shooting_step_fn(simulator, train=True, optimize_fn=optimize_fn)
+    eval_step_fn = losses.get_shooting_step_fn(simulator, train=False)
 
     num_train_steps = config.training.n_iters
     print("num_train_steps", num_train_steps)
@@ -75,11 +75,11 @@ def train(config, workdir):
         N = genes.shape[1]                      # TODO: flatten all multi-genes
         info = (in_tissue, total) if config.model.conditional else None
         # Execute one training step
-        samples = simulator.simulate(genes, in_tissue)
+        samples = simulator.simulate(genes, in_tissue, shuffle=False)
         loss = 0
-        for sample in samples:
-            loss += train_step_fn(state, sample, info)
-        loss /= config.training.sample_per_sol
+        for i in range(len(samples) - 1):
+            loss += train_step_fn(state, samples[i+1], samples[i], info)
+        loss /= config.training.sample_per_sol - 1
         state['step'] += 1
 
         if step % config.training.log_freq == 0:
@@ -100,11 +100,11 @@ def train(config, workdir):
             in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
             N = genes.shape[1]                      # TODO: flatten all multi-genes
             info = (in_tissue, total) if config.model.conditional else None
-            samples = simulator.simulate(genes, in_tissue)
+            samples = simulator.simulate(genes, in_tissue, shuffle=False)
             eval_loss = 0
-            for sample in samples:
-                eval_loss += eval_step_fn(state, sample, info)
-            eval_loss /= config.training.sample_per_sol
+            for i in range(len(samples) - 1):
+                eval_loss += eval_step_fn(state, samples[i+1], samples[i], info)
+            eval_loss /= config.training.sample_per_sol - 1
             logging.info("step: %d, eval_loss: %.5e" % (step, eval_loss.item()))
             writer.add_scalar("eval_loss", eval_loss.item(), step)
 
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     config = get_default_configs()
     config.training.batch_size = 1
 
-    checkpoint_meta_dir = os.path.join("workdir/large", "checkpoints-meta", "checkpoint.pth")
+    checkpoint_meta_dir = os.path.join("workdir/large2", "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
     model = unet_lite.Unet(config).to(config.device)
     simulator = Simulator(config)
@@ -140,18 +140,18 @@ if __name__ == '__main__':
     samples = simulator.simulate(genes, in_tissue, shuffle=False)
     info = (in_tissue, total) if config.model.conditional else None
 
-    if False:
-        state = samples[-1]
+    if True:
+        state = samples[int(len(samples) * 0.999)]
         print(state.t.item())
         sol = simulator.reverse(model, state, info)
 
         import matplotlib.pyplot as plt
-        fig, axe = plt.subplots(nrows=1, ncols=len(sol)+1, figsize=(40, 10))
+        fig, axe = plt.subplots(nrows=1, ncols=len(sol)+1, figsize=((len(sol)+1)*10, 10))
         for i in range(len(sol)):
             axe[i].imshow(sol[i][0, 0].cpu())
         axe[-1].imshow(total[0, 0].cpu())
 
-        plt.savefig(f"plots/reverse/reverse | t={state.t.item():.2f}.png")
+        plt.savefig(f"plots/reverse/reverse_mb | t={state.t.item():.2f}.png")
     else:
         for idx, sample in enumerate(samples):
             t, f, v, p, df_dt = sample.get()
@@ -173,5 +173,5 @@ if __name__ == '__main__':
             axe[1][2].imshow(in_tissue[0, 0].cpu())
             axe[1][3].imshow(total[0, 0].cpu())
 
-            plt.savefig(f"plots/normalized/simulate i={idx+1} | t={t.item():.2f}.png")
+            plt.savefig(f"plots/multi-shooting/simulate i={idx+1} | t={t.item():.2f}.png")
             plt.close()

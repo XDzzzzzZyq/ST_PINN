@@ -23,12 +23,12 @@ def get_default_configs():
     
     # training 
     config.training = training = ml_collections.ConfigDict()
-    training.batch_size = 64
+    training.batch_size = 8
     training.sample_per_sol = 32
     training.sub_step = 1
     
-    training.n_iters = 500
-    training.snapshot_freq = 100
+    training.n_iters = 10000
+    training.snapshot_freq = 500
     training.snapshot_freq_for_preemption = 50
     training.log_freq = 1
     training.eval_freq = 5

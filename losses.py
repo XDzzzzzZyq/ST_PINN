@@ -104,6 +104,63 @@ def get_step_fn(simulator, train, optimize_fn=None):
 
     return step_fn
 
+def get_shooting_step_fn(simulator, train, optimize_fn=None):
+    """Create a one-step training/evaluation function.
+
+    Args:
+        simulator: simulator 
+        train: train or eval
+        optimize_fn: An optimization function.
+
+    Returns:
+        A one-step function for training or evaluation.
+    """
+    distance = torch.nn.MSELoss()
+
+    # Simulation & Parameter space sampling
+    def loss_fn(model, sample1, sample2, info):
+        if train:
+            model.train()
+        else:
+            model.eval()        
+          
+        pred = simulator.reverse_shooting(model, sample1, sample2, info)
+        return distance(pred, sample2.f)
+
+    def step_fn(state, sample1, sample2, info):
+        """Running one step of training or evaluation.
+
+        This function will undergo `jax.lax.scan` so that multiple steps can be pmapped and jit-compiled together
+        for faster execution.
+
+        Args:
+          state: A dictionary of training information, containing the score model, optimizer,
+           EMA status, and number of optimization steps.
+          sample: A mini-sample of training/evaluation data.
+
+        Returns:
+          loss: The average loss value of this state.
+        """
+        model = state['model']
+        if train:
+            optimizer = state['optimizer']
+            optimizer.zero_grad()
+            loss = loss_fn(model, sample1, sample2, info) * (sample1.t ** 2) * 1e2   # Loss normalization
+            loss.backward()
+            optimize_fn(optimizer, model.parameters(), step=state['step'])
+            state['ema'].update(model.parameters())
+        else:
+            with torch.no_grad():
+                ema = state['ema']
+                ema.store(model.parameters())
+                ema.copy_to(model.parameters())
+                loss = loss_fn(model, sample1, sample2, info)
+                ema.restore(model.parameters())
+
+        return loss
+
+    return step_fn
+
 def check_for_nans(model):
     for name, param in model.named_parameters():
         if torch.isnan(param).any():

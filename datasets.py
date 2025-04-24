@@ -82,6 +82,7 @@ def get_dataset(config):
         transform = transforms.Compose([transforms.Resize(config.data.image_size),
                                         transforms.ToTensor(),
                                         Poisson(config.data.poisson_ratio),
+                                        transforms.RandomAffine(degrees=90, scale=(0.8, 1.2), translate=(0.2, 0.2)),
                                         transforms.RandomHorizontalFlip(),
                                         transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])
                                         # TODO: Separate the blurring 
@@ -91,9 +92,10 @@ def get_dataset(config):
 
     elif config.data.dataset == 'VISIUM':
         transform = transforms.Compose([Pad(config.data.image_size),
-                                transforms.RandomCrop(config.data.image_size),
-                                transforms.RandomHorizontalFlip(),
-                                transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])
+                                        transforms.RandomCrop(config.data.image_size),
+                                        transforms.RandomAffine(degrees=90, scale=(0.8, 1.2), translate=(0.2, 0.2)),
+                                        transforms.RandomHorizontalFlip(),
+                                        transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])
 
         train_dataset = PatchDataset(path, transform=transform)
         test_dataset = PatchDataset(path, transform=transform) # TODO: define test dataset

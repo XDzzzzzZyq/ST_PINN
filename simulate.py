@@ -1,6 +1,7 @@
 from op import ns_step
 import torch
 import random, math
+import kornia
 
 class NODE(torch.nn.Module):
     def __init__(self, model, info=None):
@@ -12,7 +13,9 @@ class NODE(torch.nn.Module):
             t = t.unsqueeze(0)
         if self.info is not None:
             f = torch.cat([*self.info, f], dim=1)
-        return self.model(f, t.to(f.device))
+        df_dt = self.model(f, t.to(f.device))
+        df_dt = kornia.filters.gaussian_blur2d(df_dt, (5, 5), (t.item(), t.item()))
+        return df_dt
 
 class Simulator:
     class State:
@@ -72,14 +75,41 @@ class Simulator:
             random.shuffle(result)
         return result
     
-    def reverse(self, model, state, info):
+    def reverse(self, model, state, info, rtol=1e-7, atol=1e-9):
         from torchdiffeq import odeint
 
-        t = torch.linspace(state.t.item(), self.param.t0, 3)
+        t = torch.linspace(state.t.item(), self.param.t0, 6)
         node = NODE(model, info)
+        noise = torch.randn_like(state.f) * 0.01 * info[0]
         with torch.no_grad():
-            sol = odeint(node, state.f, t, rtol=1e-7, atol=1e-9)
+            sol = odeint(node, state.f + noise, t, rtol=rtol, atol=atol)
             return sol
+
+    def reverse_euler(self, model, state, info):
+        num_steps = int((state.t.item() - self.param.t0) / self.param.dt)
+        f = state.f
+        node = NODE(model, info)
+        result = [state.f]
+        with torch.no_grad():
+            for idx, t in enumerate(torch.linspace(state.t.item(), self.param.t0, num_steps)):
+                f = f - node(t, f) * self.param.dt
+                if idx % (num_steps//5) == 0:
+                    result.append(f)
+        result.append(f)
+        return result
+
+    def reverse_shooting(self, model, state1, state2, info, min_step=1, max_step=6):
+        num_steps = int((state1.t.item() - state2.t.item()) / self.param.dt)
+        num_steps = min(max(num_steps, min_step), max_step)
+        f = state1.f
+        node = NODE(model, info)
+        ts = torch.linspace(state1.t.item(), state2.t.item(), num_steps+1)
+        dt = abs(ts[1] - ts[0])
+        for t in ts[:-1]:
+            df_dt = node(t, f)
+            f = f - df_dt * dt
+        return f
+
 
 if __name__ == '__main__':
 
