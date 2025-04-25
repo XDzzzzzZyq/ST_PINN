@@ -73,7 +73,7 @@ def train(config, workdir):
         batch = batch.to(config.device).float()
         in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
         N = genes.shape[1]                      # TODO: flatten all multi-genes
-        info = (in_tissue, total) if config.model.conditional else None
+        info = (in_tissue, ) if config.model.conditional else None
         # Execute one training step
         samples = simulator.simulate(genes, in_tissue, shuffle=False)
         loss = 0
@@ -99,7 +99,7 @@ def train(config, workdir):
             batch = batch.to(config.device).float()
             in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
             N = genes.shape[1]                      # TODO: flatten all multi-genes
-            info = (in_tissue, total) if config.model.conditional else None
+            info = (in_tissue, ) if config.model.conditional else None
             samples = simulator.simulate(genes, in_tissue, shuffle=False)
             eval_loss = 0
             for i in range(len(samples) - 1):
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     config = get_default_configs()
     config.training.batch_size = 1
 
-    checkpoint_meta_dir = os.path.join("workdir/large2", "checkpoints-meta", "checkpoint.pth")
+    checkpoint_meta_dir = os.path.join("workdir/mshoot", "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
     model = unet_lite.Unet(config).to(config.device)
     simulator = Simulator(config)
@@ -138,9 +138,9 @@ if __name__ == '__main__':
     batch = batch.to(config.device).float()
     in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
     samples = simulator.simulate(genes, in_tissue, shuffle=False)
-    info = (in_tissue, total) if config.model.conditional else None
+    info = (in_tissue, ) if config.model.conditional else None
 
-    if True:
+    if False:
         state = samples[int(len(samples) * 0.999)]
         print(state.t.item())
         sol = simulator.reverse(model, state, info)

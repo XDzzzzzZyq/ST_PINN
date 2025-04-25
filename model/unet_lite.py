@@ -50,10 +50,12 @@ class Unet(nn.Module):
     def __init__(self, config):
         super(Unet, self).__init__()
 
+        self.dt = config.param.dt
+
         self.channels = channels = config.model.level_feature_nums
         self.num_features = len(config.data.field) 
         if config.model.conditional:
-            self.num_features += 2# Boundary and Total Count
+            self.num_features += 1         # Boundary and Total Count
         self.first = get_double_res(self.num_features, channels[0])
         self.temb_first = get_fc_layer(32, 32)
 
@@ -91,6 +93,7 @@ class Unet(nn.Module):
 
     def forward(self, x, t):
 
+        t = t + (torch.rand_like(t)-0.5) * self.dt
         temb = layers.get_timestep_embedding(t, 32, 1.0)
         temb = self.temb_first(temb)
 
