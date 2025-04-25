@@ -71,7 +71,7 @@ def train(config, workdir):
             train_iter = iter(train_ds)
 
         batch = batch.to(config.device).float()
-        in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
+        in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
         N = genes.shape[1]                      # TODO: flatten all multi-genes
         info = (in_tissue, ) if config.model.conditional else None
         # Execute one training step
@@ -97,7 +97,7 @@ def train(config, workdir):
             except StopIteration:
                 eval_iter = iter(eval_ds)
             batch = batch.to(config.device).float()
-            in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
+            in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
             N = genes.shape[1]                      # TODO: flatten all multi-genes
             info = (in_tissue, ) if config.model.conditional else None
             samples = simulator.simulate(genes, in_tissue, shuffle=False)
@@ -136,14 +136,14 @@ if __name__ == '__main__':
     batch, target = next(iter(eval_ds))
 
     batch = batch.to(config.device).float()
-    in_tissue, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:]
+    in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
     samples = simulator.simulate(genes, in_tissue, shuffle=False)
     info = (in_tissue, ) if config.model.conditional else None
 
     if False:
         state = samples[int(len(samples) * 0.999)]
         print(state.t.item())
-        sol = simulator.reverse(model, state, info)
+        sol = simulator.reverse_euler(model, state, info)
 
         import matplotlib.pyplot as plt
         fig, axe = plt.subplots(nrows=1, ncols=len(sol)+1, figsize=((len(sol)+1)*10, 10))
@@ -151,7 +151,7 @@ if __name__ == '__main__':
             axe[i].imshow(sol[i][0, 0].cpu())
         axe[-1].imshow(total[0, 0].cpu())
 
-        plt.savefig(f"plots/reverse/reverse_mb | t={state.t.item():.2f}.png")
+        plt.savefig(f"plots/reverse/reverse_me | t={state.t.item():.2f}.png")
     else:
         for idx, sample in enumerate(samples):
             t, f, v, p, df_dt = sample.get()

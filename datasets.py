@@ -57,13 +57,15 @@ class Pad:
         return img
 
 class Poisson:
-    def __init__(self, ratio):
-        self.ratio = ratio
+    def __init__(self, ratio_min, ratio_max):
+        self.ratio = (ratio_min, ratio_max)
 
     def __call__(self, img):
-        counts = torch.poisson(img * self.ratio)
-        bounds = img
-        return torch.cat([img, counts, counts], dim=0)
+        ratio = torch.empty(1).uniform_(*self.ratio)
+        density = img * ratio
+        counts = torch.poisson(density)
+        bounds = (img > 0.5).float()
+        return torch.cat([bounds, density, counts, counts], dim=0)
 
 def get_dataset(config):
 
@@ -81,7 +83,7 @@ def get_dataset(config):
     if config.data.dataset == 'MNIST':
         transform = transforms.Compose([transforms.Resize(config.data.image_size),
                                         transforms.ToTensor(),
-                                        Poisson(config.data.poisson_ratio),
+                                        Poisson(config.data.poisson_ratio_min, config.data.poisson_ratio_max),
                                         transforms.RandomAffine(degrees=90, scale=(0.8, 1.2), translate=(0.2, 0.2)),
                                         transforms.RandomHorizontalFlip(),
                                         transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])

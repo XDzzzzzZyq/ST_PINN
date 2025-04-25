@@ -13,7 +13,8 @@ def get_default_configs():
     data.pre_blur = 0.8
     data.dataset = "MNIST" # MNIST / VISIUM / ...
     
-    data.poisson_ratio = 0.5 # for MNIST data
+    data.poisson_ratio_min = 0.1
+    data.poisson_ratio_max = 0.7 # for MNIST data
 
     data.field = ['EPCAM'] # for Visium HD data
     data.path = '../STHD/analysis/exp1_full_patchify/patches/'

@@ -1,7 +1,6 @@
 from op import ns_step
 import torch
 import random, math
-import kornia
 
 class NODE(torch.nn.Module):
     def __init__(self, model, info=None):
@@ -14,7 +13,6 @@ class NODE(torch.nn.Module):
         if self.info is not None:
             f = torch.cat([*self.info, f], dim=1)
         df_dt = self.model(f, t.to(f.device))
-        df_dt = kornia.filters.gaussian_blur2d(df_dt, (5, 5), (t.item(), t.item()))
         return df_dt
 
 class Simulator:
