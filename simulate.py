@@ -78,23 +78,30 @@ class Simulator:
 
         t = torch.linspace(state.t.item(), self.param.t0, 6)
         node = NODE(model, info)
-        noise = torch.randn_like(state.f) * 0.01 * info[0]
+        # noise = torch.randn_like(state.f) * 0.01 * info[0]
         with torch.no_grad():
-            sol = odeint(node, state.f + noise, t, rtol=rtol, atol=atol)
+            sol = odeint(node, state.f, t, rtol=rtol, atol=atol)
             return sol
 
-    def reverse_euler(self, model, state, info):
-        num_steps = int((state.t.item() - self.param.t0) / self.param.dt)
+    def reverse_euler(self, model, state, info, stride=1, exp=2.0):
+        num_steps = int((state.t.item() - self.param.t0) / (self.param.dt * stride))
+        ts = torch.linspace(state.t.item(), self.param.t0, num_steps) / state.t.item()
+        ts = (ts ** exp) * state.t.item()
         f = state.f
         node = NODE(model, info)
         result = [state.f]
+        pred = [state.df_dt]
         with torch.no_grad():
-            for idx, t in enumerate(torch.linspace(state.t.item(), self.param.t0, num_steps)):
-                f = f - node(t, f) * self.param.dt
+            for idx, t in enumerate(ts[:-1]):
+                dt = abs(ts[idx] - ts[idx+1])
+                df_dt = node(t, f)
+                f = f - df_dt * dt
                 if idx % (num_steps//5) == 0:
                     result.append(f)
+                    pred.append(df_dt)
         result.append(f)
-        return result
+        pred.append(df_dt)
+        return result, pred
 
     def reverse_shooting(self, model, state1, state2, info, min_step=1, max_step=6):
         num_steps = int((state1.t.item() - state2.t.item()) / self.param.dt)

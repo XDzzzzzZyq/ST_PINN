@@ -24,8 +24,8 @@ def get_default_configs():
     
     # training 
     config.training = training = ml_collections.ConfigDict()
-    training.batch_size = 8
-    training.sample_per_sol = 32
+    training.batch_size = 16
+    training.sample_per_sol = 64
     training.sub_step = 1
     
     training.n_iters = 10000
@@ -67,13 +67,13 @@ def get_default_configs():
     param.p_max = 0.001
     
     param.Re_min = 1000.0
-    param.Re_max = 10000.0
+    param.Re_max = 100000.0
     
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
     optim.weight_decay = 0
     optim.optimizer = 'Adam'
-    optim.lr = 1e-4
+    optim.lr = 5e-4
     optim.beta1 = 0.9
     optim.eps = 1e-8
     optim.warmup = 0

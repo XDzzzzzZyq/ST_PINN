@@ -3,8 +3,8 @@
 
 import torch
 import torch.optim as optim
-import numpy as np
 import torch.nn.functional as F
+import torchvision
 
 
 def get_optimizer(config, params, lr_mul=1.0):
@@ -125,6 +125,11 @@ def get_shooting_step_fn(simulator, train, optimize_fn=None):
             model.eval()        
           
         pred = simulator.reverse_shooting(model, sample1, sample2, info)
+        # TODO: Regularization
+        # sigma = torch.sqrt(sample2.t).item() * 5
+        # mask = torchvision.transforms.functional.gaussian_blur(info[0], (25, 25), (sigma, sigma))
+        # mask = (mask > 0.05).float()
+        # return distance(pred, sample2.f * mask)
         return distance(pred, sample2.f)
 
     def step_fn(state, sample1, sample2, info):
@@ -145,7 +150,7 @@ def get_shooting_step_fn(simulator, train, optimize_fn=None):
         if train:
             optimizer = state['optimizer']
             optimizer.zero_grad()
-            loss = loss_fn(model, sample1, sample2, info) * (sample1.t ** 2) * 1e2   # Loss normalization
+            loss = loss_fn(model, sample1, sample2, info) # * (sample1.t ** 2) * 1e2
             loss.backward()
             optimize_fn(optimizer, model.parameters(), step=state['step'])
             state['ema'].update(model.parameters())

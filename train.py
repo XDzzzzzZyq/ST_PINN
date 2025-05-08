@@ -122,11 +122,12 @@ if __name__ == '__main__':
     from config.default_configs import get_default_configs
     config = get_default_configs()
     config.training.batch_size = 1
+    config.data.poisson_ratio_max = 0.1
 
-    checkpoint_meta_dir = os.path.join("workdir/mshoot", "checkpoints-meta", "checkpoint.pth")
+    workdir = 'workdir/mshoot'
+    checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
     model = unet_lite.Unet(config).to(config.device)
-    simulator = Simulator(config)
     ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
     optimizer = losses.get_optimizer(config, model.parameters())
     state = dict(optimizer=optimizer, model=model, ema=ema, step=0)
@@ -140,19 +141,53 @@ if __name__ == '__main__':
     samples = simulator.simulate(genes, in_tissue, shuffle=False)
     info = (in_tissue, ) if config.model.conditional else None
 
-    if False:
-        state = samples[int(len(samples) * 0.999)]
-        print(state.t.item())
-        sol = simulator.reverse_euler(model, state, info)
-
+    mode = 0
+    if mode == 0:
         import matplotlib.pyplot as plt
-        fig, axe = plt.subplots(nrows=1, ncols=len(sol)+1, figsize=((len(sol)+1)*10, 10))
-        for i in range(len(sol)):
-            axe[i].imshow(sol[i][0, 0].cpu())
-        axe[-1].imshow(total[0, 0].cpu())
+        
+        state = samples[int((len(samples)-1) * 0.5)]
+        print(state.t.item())
 
-        plt.savefig(f"plots/reverse/reverse_me | t={state.t.item():.2f}.png")
-    else:
+        def draw(stride, exp):
+            sol, pred = simulator.reverse_euler(model, state, info, stride=stride, exp=exp)
+            vmin, vmax = sol[0][0, 0].min().item(), sol[0][0, 0].max().item()
+            fig, axe = plt.subplots(nrows=2, ncols=len(sol)+1, figsize=((len(sol)+1)*10, 20))
+            for i in range(len(sol)):
+                axe[0,i].imshow(sol[i][0, 0].cpu(), vmin=vmin, vmax=vmax)
+                axe[1,i].imshow(pred[i][0, 0].cpu())
+            axe[0,-1].imshow(total[0, 0].cpu(), vmin=vmin, vmax=vmax)
+            axe[1,-1].imshow(torch.zeros_like(pred[i][0, 0]).cpu(), vmin=vmin, vmax=vmax)
+
+            print(f"loss of s={stride} | exp={exp} : {((pred[-1] - total) ** 2).mean()}")
+
+            plt.savefig(f"{workdir}/plots/reverse/reverse_re | t={state.t.item():.2f} | s={stride} | exp={exp}.png")
+        
+        draw(100, 0.1)
+        draw(100, 0.3)
+        draw(100, 0.5)
+        draw(10, 0.1)
+        draw(10, 0.3)
+        draw(10, 0.5)
+        draw(1, 1.0)
+        print(f"loss of nothing : {((state.f - total) ** 2).mean()}")
+    elif mode == 1:
+        import matplotlib.pyplot as plt
+        
+        state = samples[int((len(samples)-1) * 0.5)]
+        print(state.t.item())
+
+        def draw():
+            sol = simulator.reverse(model, state, info)
+            vmin, vmax = sol[0][0, 0].min().item(), sol[0][0, 0].max().item()
+            fig, axe = plt.subplots(nrows=1, ncols=len(sol)+1, figsize=((len(sol)+1)*10, 10))
+            for i in range(len(sol)):
+                axe[i].imshow(sol[i][0, 0].cpu(), vmin=vmin, vmax=vmax)
+            axe[-1].imshow(total[0, 0].cpu(), vmin=vmin, vmax=vmax)
+
+            plt.savefig(f"{workdir}/plots/reverse/reverse_blk | t={state.t.item():.2f}d.png")
+        
+        draw()
+    elif mode == 2:
         for idx, sample in enumerate(samples):
             t, f, v, p, df_dt = sample.get()
             x = f
@@ -167,11 +202,11 @@ if __name__ == '__main__':
             axe[0][1].imshow(v[0, 0].cpu())
             axe[0][2].imshow(v[0, 1].cpu())
             axe[0][3].imshow(p[0, 0].cpu())
-
-            axe[1][0].imshow(df_dt[0, 0].cpu())
-            axe[1][1].imshow(pred[0, 0].cpu())
+            vmin, vmax = df_dt[0, 0].min().item(), df_dt[0, 0].max().item()
+            axe[1][0].imshow(df_dt[0, 0].cpu(), vmin=vmin, vmax=vmax)
+            axe[1][1].imshow(pred[0, 0].cpu(), vmin=vmin, vmax=vmax)
             axe[1][2].imshow(in_tissue[0, 0].cpu())
             axe[1][3].imshow(total[0, 0].cpu())
 
-            plt.savefig(f"plots/multi-shooting/simulate i={idx+1} | t={t.item():.2f}.png")
+            plt.savefig(f"{workdir}/plots/multi-shooting/simulate i={idx+1} | t={t.item():.2f}.png")
             plt.close()
