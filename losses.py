@@ -42,18 +42,7 @@ def get_optimize_fn(config):
 
     return optimize_fn
 
-
 def get_step_fn(simulator, train, optimize_fn=None):
-    """Create a one-step training/evaluation function.
-
-    Args:
-        simulator: simulator 
-        train: train or eval
-        optimize_fn: An optimization function.
-
-    Returns:
-        A one-step function for training or evaluation.
-    """
     distance = torch.nn.MSELoss()
 
     # Simulation & Parameter space sampling
@@ -63,27 +52,13 @@ def get_step_fn(simulator, train, optimize_fn=None):
         else:
             model.eval()        
 
-        x = sample.f
-        if info is not None:
-            x = torch.cat([*info, sample.f], dim=1)
-            
-        pred = model(x, sample.t)
+        if model.conditional:
+            pred = model(sample.f, sample.t, info)
+        else:
+            pred = model(torch.cat([*info, sample.f], dim=1), sample.t)
         return distance(pred, sample.df_dt) + pred.mean(dim=(1,2,3)).square().mean()
 
     def step_fn(state, sample, info):
-        """Running one step of training or evaluation.
-
-        This function will undergo `jax.lax.scan` so that multiple steps can be pmapped and jit-compiled together
-        for faster execution.
-
-        Args:
-          state: A dictionary of training information, containing the score model, optimizer,
-           EMA status, and number of optimization steps.
-          sample: A mini-sample of training/evaluation data.
-
-        Returns:
-          loss: The average loss value of this state.
-        """
         model = state['model']
         if train:
             optimizer = state['optimizer']
@@ -92,6 +67,7 @@ def get_step_fn(simulator, train, optimize_fn=None):
             loss.backward()
             optimize_fn(optimizer, model.parameters(), step=state['step'])
             state['ema'].update(model.parameters())
+            state['step'] += 1
         else:
             with torch.no_grad():
                 ema = state['ema']
@@ -104,17 +80,7 @@ def get_step_fn(simulator, train, optimize_fn=None):
 
     return step_fn
 
-def get_shooting_step_fn(simulator, train, optimize_fn=None):
-    """Create a one-step training/evaluation function.
-
-    Args:
-        simulator: simulator 
-        train: train or eval
-        optimize_fn: An optimization function.
-
-    Returns:
-        A one-step function for training or evaluation.
-    """
+def get_multi_shooting_step_fn(simulator, train, optimize_fn=None):
     distance = torch.nn.MSELoss()
 
     # Simulation & Parameter space sampling
@@ -124,7 +90,7 @@ def get_shooting_step_fn(simulator, train, optimize_fn=None):
         else:
             model.eval()        
           
-        pred = simulator.reverse_shooting(model, sample1, sample2, info)
+        pred = simulator.reverse_aca_shooting(model, sample1, sample2, info)
         # TODO: Regularization
         # sigma = torch.sqrt(sample2.t).item() * 5
         # mask = torchvision.transforms.functional.gaussian_blur(info[0], (25, 25), (sigma, sigma))
@@ -132,34 +98,62 @@ def get_shooting_step_fn(simulator, train, optimize_fn=None):
         # return distance(pred, sample2.f * mask)
         return distance(pred, sample2.f)
 
-    def step_fn(state, sample1, sample2, info):
-        """Running one step of training or evaluation.
+    def step_fn(state, samples, info):
+        model = state['model']
+        loss = 0
+        for i in range(len(samples) - 1):
+            if train:
+                optimizer = state['optimizer']
+                optimizer.zero_grad()
+                loss_cur = loss_fn(model, samples[i+1], samples[i], info)
+                loss_cur.backward()
+                optimize_fn(optimizer, model.parameters(), step=state['step'])
+                state['ema'].update(model.parameters())
+            else:
+                with torch.no_grad():
+                    ema = state['ema']
+                    ema.store(model.parameters())
+                    ema.copy_to(model.parameters())
+                    loss_cur = loss_fn(model, samples[i+1], samples[i], info)
+                    ema.restore(model.parameters())
+            loss += loss_cur.item()
 
-        This function will undergo `jax.lax.scan` so that multiple steps can be pmapped and jit-compiled together
-        for faster execution.
+        if train:
+            state['step'] += 1
+        return loss / (len(samples) - 1)
 
-        Args:
-          state: A dictionary of training information, containing the score model, optimizer,
-           EMA status, and number of optimization steps.
-          sample: A mini-sample of training/evaluation data.
+    return step_fn
 
-        Returns:
-          loss: The average loss value of this state.
-        """
+def get_shooting_step_fn(simulator, train, optimize_fn=None):
+    distance = torch.nn.MSELoss()
+
+    # Simulation & Parameter space sampling
+    def loss_fn(model, samples, info):
+        if train:
+            model.train()
+        else:
+            model.eval()        
+        
+        pred = simulator.reverse_adjoint_shooting(model, samples, info, rtol=1e-4, atol=1e-5)
+        targ = torch.stack([sample.f for sample in samples[::-1]]).to(pred.device)
+        return distance(pred, targ)
+
+    def step_fn(state, samples, info):
         model = state['model']
         if train:
             optimizer = state['optimizer']
             optimizer.zero_grad()
-            loss = loss_fn(model, sample1, sample2, info) # * (sample1.t ** 2) * 1e2
+            loss = loss_fn(model, samples, info)
             loss.backward()
             optimize_fn(optimizer, model.parameters(), step=state['step'])
             state['ema'].update(model.parameters())
+            state['step'] += 1
         else:
             with torch.no_grad():
                 ema = state['ema']
                 ema.store(model.parameters())
                 ema.copy_to(model.parameters())
-                loss = loss_fn(model, sample1, sample2, info)
+                loss = loss_fn(model, samples, info)
                 ema.restore(model.parameters())
 
         return loss

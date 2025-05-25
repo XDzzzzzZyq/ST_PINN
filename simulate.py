@@ -1,6 +1,7 @@
 from op import ns_step
 import torch
 import random, math
+from functools import partial
 
 class NODE(torch.nn.Module):
     def __init__(self, model, info=None):
@@ -10,9 +11,11 @@ class NODE(torch.nn.Module):
     def forward(self, t, f):
         if t.ndim == 0:
             t = t.unsqueeze(0)
-        if self.info is not None:
-            f = torch.cat([*self.info, f], dim=1)
-        df_dt = self.model(f, t.to(f.device))
+        # print(t.item())
+        if self.model.conditional:
+            df_dt = self.model(f, t.to(f.device), self.info)
+        else:
+            df_dt = self.model(torch.cat([*self.info, f], dim=1), t.to(f.device))
         return df_dt
 
 class Simulator:
@@ -29,13 +32,17 @@ class Simulator:
             self.v = v
             self.p = p
             self.df_dt = df_dt
+
+
         
         def get(self):
             return self.t, self.f, self.v, self.p, self.df_dt
 
 
+
     def __init__(self, config):
         self.param = config.param
+        self.rev_method = config.reverse.method
         self.sample_per_sol = config.training.sample_per_sol
 
     def simulate(self, genes, in_tissue, shuffle=True):
@@ -81,7 +88,7 @@ class Simulator:
         # noise = torch.randn_like(state.f) * 0.01 * info[0]
         with torch.no_grad():
             sol = odeint(node, state.f, t, rtol=rtol, atol=atol)
-            return sol
+            return sol, t
 
     def reverse_euler(self, model, state, info, stride=1, exp=2.0):
         num_steps = int((state.t.item() - self.param.t0) / (self.param.dt * stride))
@@ -114,6 +121,38 @@ class Simulator:
             df_dt = node(t, f)
             f = f - df_dt * dt
         return f
+
+    def reverse_adjoint_shooting(self, model, states, info, rtol=1e-7, atol=1e-9):
+        from torchdiffeq import odeint_adjoint
+
+        f = states[-1].f
+        ts = torch.tensor([state.t for state in states[::-1]])
+        node = NODE(model, info)
+        options = {"step_size" : self.param.dt * 10}
+        # sol = odeint_adjoint(node, f, ts, method="midpoint", options=options)
+        sol = odeint_adjoint(node, f, ts, rtol=rtol, atol=atol)
+        return sol
+
+    def reverse_aca_shooting(self, model, state1, state2, info, rtol=1e-7, atol=1e-9):
+        from TorchDiffEqPack import odesolve_adjoint_sym12 as odesolve
+
+        f = state1.f
+        node = NODE(model, info)
+
+        options = {}
+        options.update({'method': 'sym12async'})
+        options.update({'h': None})
+        options.update({'t0': state1.t})
+        options.update({'t1': state2.t})
+        options.update({'rtol': 1e-3})
+        options.update({'atol': 1e-3})
+        options.update({'print_neval': False})
+        options.update({'neval_max': 1e5})
+        options.update({'t_eval':None})
+        options.update({'interpolation_method':'cubic'})
+        options.update({'regenerate_graph':False})
+        sol = odesolve(node, f, options=options)
+        return sol
 
 
 if __name__ == '__main__':

@@ -73,14 +73,10 @@ def train(config, workdir):
         batch = batch.to(config.device).float()
         in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
         N = genes.shape[1]                      # TODO: flatten all multi-genes
-        info = (in_tissue, ) if config.model.conditional else None
+        info = (in_tissue, ) #if config.model.conditional else None
         # Execute one training step
         samples = simulator.simulate(genes, in_tissue, shuffle=False)
-        loss = 0
-        for i in range(len(samples) - 1):
-            loss += train_step_fn(state, samples[i+1], samples[i], info)
-        loss /= config.training.sample_per_sol - 1
-        state['step'] += 1
+        loss = train_step_fn(state, samples, info)
 
         if step % config.training.log_freq == 0:
             logging.info("step: %d, training_loss: %.5e" % (step, loss.item()))
@@ -99,12 +95,9 @@ def train(config, workdir):
             batch = batch.to(config.device).float()
             in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
             N = genes.shape[1]                      # TODO: flatten all multi-genes
-            info = (in_tissue, ) if config.model.conditional else None
+            info = (in_tissue, ) #if config.model.conditional else None
             samples = simulator.simulate(genes, in_tissue, shuffle=False)
-            eval_loss = 0
-            for i in range(len(samples) - 1):
-                eval_loss += eval_step_fn(state, samples[i+1], samples[i], info)
-            eval_loss /= config.training.sample_per_sol - 1
+            eval_loss = eval_step_fn(state, samples, info)
             logging.info("step: %d, eval_loss: %.5e" % (step, eval_loss.item()))
             writer.add_scalar("eval_loss", eval_loss.item(), step)
 
@@ -124,7 +117,7 @@ if __name__ == '__main__':
     config.training.batch_size = 1
     config.data.poisson_ratio_max = 0.1
 
-    workdir = 'workdir/mshoot'
+    workdir = 'workdir/adjoint'
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
     model = unet_lite.Unet(config).to(config.device)
@@ -139,9 +132,9 @@ if __name__ == '__main__':
     batch = batch.to(config.device).float()
     in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
     samples = simulator.simulate(genes, in_tissue, shuffle=False)
-    info = (in_tissue, ) if config.model.conditional else None
+    info = (in_tissue, ) #if config.model.conditional else None
 
-    mode = 0
+    mode = 2
     if mode == 0:
         import matplotlib.pyplot as plt
         
@@ -172,29 +165,49 @@ if __name__ == '__main__':
         print(f"loss of nothing : {((state.f - total) ** 2).mean()}")
     elif mode == 1:
         import matplotlib.pyplot as plt
+        from matplotlib import gridspec
         
         state = samples[int((len(samples)-1) * 0.5)]
+        state = samples[-1]
         print(state.t.item())
 
         def draw():
-            sol = simulator.reverse(model, state, info)
-            vmin, vmax = sol[0][0, 0].min().item(), sol[0][0, 0].max().item()
-            fig, axe = plt.subplots(nrows=1, ncols=len(sol)+1, figsize=((len(sol)+1)*10, 10))
+            sol, ts = simulator.reverse(model, state, info, rtol=1e-4, atol=1e-5)
+            vmin, vmax = total[0, 0].min().item(), total[0, 0].max().item()
+            
+            n = len(sol) + 1  # number of images (sol + total)
+            fig = plt.figure(figsize=(n * 10 + 1.5, 10))  # add space for colorbar
+            spec = gridspec.GridSpec(nrows=1, ncols=n+1, width_ratios=[1]*n + [0.05], wspace=0.05)
+
             for i in range(len(sol)):
-                axe[i].imshow(sol[i][0, 0].cpu(), vmin=vmin, vmax=vmax)
-            axe[-1].imshow(total[0, 0].cpu(), vmin=vmin, vmax=vmax)
+                ax = fig.add_subplot(spec[0, i])
+                im = ax.imshow(sol[i][0, 0].cpu(), vmin=vmin, vmax=vmax)
+                ax.set_title(f"t = {ts[i].item():.2f}", fontsize=14)
+                ax.axis("off")
+
+            ax = fig.add_subplot(spec[0, len(sol)])
+            ax.set_title("Total", fontsize=14)
+            ax.axis("off")
+            im = ax.imshow(total[0, 0].cpu(), vmin=vmin, vmax=vmax)
+
+            # Add colorbar in the final column
+            cbar_ax = fig.add_subplot(spec[0, -1])
+            fig.colorbar(im, cax=cbar_ax)
 
             plt.savefig(f"{workdir}/plots/reverse/reverse_blk | t={state.t.item():.2f}d.png")
+            print(total[0, 0].sum(), sol[-1][0, 0].sum())
         
         draw()
     elif mode == 2:
+        tl = []
+        r = []
         for idx, sample in enumerate(samples):
             t, f, v, p, df_dt = sample.get()
-            x = f
-            if info is not None:
-                x = torch.cat([*info, x], dim=1)
             with torch.no_grad():
-                pred = model(x, t)
+                if model.conditional:
+                    pred = model(f, t.to(f.device), info)
+                else:
+                    pred = model(torch.cat([*info, f], dim=1), t.to(f.device))
 
             import matplotlib.pyplot as plt
             fig, axe = plt.subplots(nrows=2, ncols=4, figsize=(30, 10))
@@ -204,9 +217,18 @@ if __name__ == '__main__':
             axe[0][3].imshow(p[0, 0].cpu())
             vmin, vmax = df_dt[0, 0].min().item(), df_dt[0, 0].max().item()
             axe[1][0].imshow(df_dt[0, 0].cpu(), vmin=vmin, vmax=vmax)
-            axe[1][1].imshow(pred[0, 0].cpu(), vmin=vmin, vmax=vmax)
+            axe[1][1].imshow(pred[0, 0].cpu())
             axe[1][2].imshow(in_tissue[0, 0].cpu())
             axe[1][3].imshow(total[0, 0].cpu())
 
-            plt.savefig(f"{workdir}/plots/multi-shooting/simulate i={idx+1} | t={t.item():.2f}.png")
+            p = pred[0, 0].abs()
+            g = df_dt[0, 0].abs()
+            print(p.mean(), g.mean(), p.mean()/g.mean())
+            tl.append(sample.t.item())
+            r.append((p.mean()/g.mean()).item())
+
+            plt.savefig(f"{workdir}/plots/pred/simulate i={idx+1} | t={t.item():.2f}.png")
             plt.close()
+
+        d = {"t":tl, "r":r}
+        torch.save(d, 'analysis.pth')

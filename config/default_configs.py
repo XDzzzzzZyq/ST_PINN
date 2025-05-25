@@ -24,13 +24,13 @@ def get_default_configs():
     
     # training 
     config.training = training = ml_collections.ConfigDict()
-    training.batch_size = 16
-    training.sample_per_sol = 64
+    training.batch_size = 32
+    training.sample_per_sol = 32
     training.sub_step = 1
     
     training.n_iters = 10000
-    training.snapshot_freq = 500
-    training.snapshot_freq_for_preemption = 50
+    training.snapshot_freq = 100
+    training.snapshot_freq_for_preemption = 10
     training.log_freq = 1
     training.eval_freq = 5
     training.snapshot_freq_save = 250       # will not overwrite
@@ -44,7 +44,7 @@ def get_default_configs():
     model.num_res_blocks = 2
     model.attn_resolutions = (8,)
     model.resamp_with_conv = True
-    model.conditional = True
+    model.conditional = False    # Using control net
     model.dropout = 0.1
     model.embedding_type = 'fourier'
     
@@ -67,13 +67,18 @@ def get_default_configs():
     param.p_max = 0.001
     
     param.Re_min = 1000.0
-    param.Re_max = 100000.0
+    param.Re_max = 10000.0
+
+    # reverse
+    config.reverse = reverse = ml_collections.ConfigDict()
+    reverse.method = 'euler' # ['None', 'euler', 'midpoint', 'rk4', 'dopri5', ...] https://github.com/rtqichen/torchdiffeq
+    reverse.node = 'adjoint' # ['adjoint', 'aca'] 
     
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
     optim.weight_decay = 0
     optim.optimizer = 'Adam'
-    optim.lr = 5e-4
+    optim.lr = 1e-2
     optim.beta1 = 0.9
     optim.eps = 1e-8
     optim.warmup = 0

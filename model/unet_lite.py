@@ -53,21 +53,29 @@ class Unet(nn.Module):
         self.dt = config.param.dt
 
         self.channels = channels = config.model.level_feature_nums
-        self.num_features = len(config.data.field) 
-        if config.model.conditional:
-            self.num_features += 1         # Boundary and Total Count
+        self.num_features = len(config.data.field) # usually 1
+        self.conditional = config.model.conditional
+        if self.conditional:
+            self.ctrl_first = get_double_res(self.num_features, channels[0])
+        else:
+            self.num_features += 1
+
         self.first = get_double_res(self.num_features, channels[0])
         self.temb_first = get_fc_layer(32, 32)
 
         ch_i = channels[0]
         self.down = []
         self.temb_down = []
+        self.ctrl_down = []
         for ch_o in channels[1:]:
             self.down.append(get_down_layer(ch_i, ch_o))
             self.temb_down.append(get_fc_layer(32, ch_o))
+            if self.conditional:
+                self.ctrl_down.append(get_down_layer(ch_i, ch_o))
             ch_i = ch_o
         self.down = nn.ModuleList(self.down)
         self.temb_down = nn.ModuleList(self.temb_down)
+        self.ctrl_down = nn.ModuleList(self.ctrl_down)
 
         self.mid = get_mid_layer(ch_i)
 
@@ -78,7 +86,7 @@ class Unet(nn.Module):
         for ch_o in channels[-2::-1]:
             self.temb_up.append(get_fc_layer(32, ch_i))
             self.up.append(get_up_layer(ch_i, ch_o))
-            self.up_conv.append(get_double_res(ch_o*2, ch_o, 4))
+            self.up_conv.append(get_double_res(ch_o * (3 if self.conditional else 2), ch_o, 4))
             ch_i = ch_o
         self.up = nn.ModuleList(self.up)
         self.up_conv = nn.ModuleList(self.up_conv)
@@ -91,34 +99,44 @@ class Unet(nn.Module):
             nn.Conv2d(1, 1, kernel_size=1)
         )
 
-    def forward(self, x, t):
+    def forward(self, x, t, c=None):
 
-        t = t + (torch.rand_like(t)-0.5) * self.dt
-        temb = layers.get_timestep_embedding(t, 32, 1.0)
-        temb = self.temb_first(temb)
+        t = layers.get_timestep_embedding(t, 32, 1.0)
+        t = self.temb_first(t)
+        
+        if self.conditional:
+            c = self.ctrl_first(c[0] + x) # TODO: multiple control
+            ctrl_features = [c]
 
         x = self.first(x)
         features = [x]
 
-        for down, temb_down in zip(self.down, self.temb_down):
-            x = down(x)
-            x = x + temb_down(temb)[:, :, None, None]
+        for idx in range(len(self.down)):
+            x = self.down[idx](x)
+            temb = self.temb_down[idx](t)[:, :, None, None]
+            x = x + temb
             features.append(x)
+            
+            if self.conditional:
+                c = self.down[idx](c)
+                c = c + temb
+                ctrl_features.append(c)
+
         features.pop(-1)
-        
         x = self.mid(x)
 
         for idx in range(len(features)):
             feature = features[-1-idx]
+            temb = self.temb_up[idx](t)[:, :, None, None]
 
-            up = self.up[idx]
-            up_conv = self.up_conv[idx]
-            temb_up = self.temb_up[idx] 
+            x = x + temb
+            x = self.up[idx](x)
 
-            x = x + temb_up(temb)[:, :, None, None]
-            x = up(x)
-            block = torch.cat([feature, x], dim=1)
-            x = up_conv(block)
-
+            if self.conditional:
+                c = ctrl_features[-2-idx]
+                block = torch.cat([feature, x, c], dim=1)
+            else:
+                block = torch.cat([feature, x], dim=1)
+            x = self.up_conv[idx](block)
         x = self.end(x)
         return x
