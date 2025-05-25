@@ -53,7 +53,7 @@ class Unet(nn.Module):
         self.dt = config.param.dt
 
         self.channels = channels = config.model.level_feature_nums
-        self.num_features = len(config.data.field) # usually 1
+        self.num_features = 1 # forced single feature, otherwise len(config.data.field)
         self.conditional = config.model.conditional
         if self.conditional:
             self.ctrl_first = get_double_res(self.num_features, channels[0])

@@ -7,7 +7,7 @@ import time
 import logging
 from model import unet, unet_lite
 from model.ema import ExponentialMovingAverage
-from simulate import Simulator
+from simulate.simulate import Simulator
 import losses
 import datasets
 
@@ -72,10 +72,10 @@ def train(config, workdir):
 
         batch = batch.to(config.device).float()
         in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
-        N = genes.shape[1]                      # TODO: flatten all multi-genes
-        info = (in_tissue, ) #if config.model.conditional else None
+        B, N, W, H = genes.shape
+        info = (in_tissue.repeat(N,1,1,1), ) #if config.model.conditional else None
         # Execute one training step
-        samples = simulator.simulate(genes, in_tissue, shuffle=False)
+        samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
         loss = train_step_fn(state, samples, info)
 
         if step % config.training.log_freq == 0:
@@ -94,9 +94,9 @@ def train(config, workdir):
                 eval_iter = iter(eval_ds)
             batch = batch.to(config.device).float()
             in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
-            N = genes.shape[1]                      # TODO: flatten all multi-genes
-            info = (in_tissue, ) #if config.model.conditional else None
-            samples = simulator.simulate(genes, in_tissue, shuffle=False)
+            B, N, W, H = genes.shape
+            info = (in_tissue.repeat(N,1,1,1), ) #if config.model.conditional else None
+            samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
             eval_loss = eval_step_fn(state, samples, info)
             logging.info("step: %d, eval_loss: %.5e" % (step, eval_loss.item()))
             writer.add_scalar("eval_loss", eval_loss.item(), step)

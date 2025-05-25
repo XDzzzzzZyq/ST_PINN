@@ -67,6 +67,40 @@ class Poisson:
         bounds = (img > 0.5).float()
         return torch.cat([bounds, density, counts, counts], dim=0)
 
+class SimulatedDataset(Dataset):
+    def __init__(self, size, field, p=0.1, train=True, transform=None):
+        from simulate.simulate_count import create_matrix
+        self.p = 0.1
+        self.transform = transform
+        self.filtered = field
+        self.n_celltypes, self.n_gene, self.matrix = create_matrix(self.filtered)
+        self.size = size
+
+        print(self.n_celltypes, self.n_gene)
+
+    def __len__(self):
+        return int(1e8)
+
+    def __getitem__(self, idx):
+        from simulate.simulate_count import create_ct, diffuse_adata
+        from STHD import sthdviz
+        adata, ct_mask = create_ct(self.size, self.size, n_celltypes=self.n_celltypes, matrix=self.matrix, ncells=3)
+        adata = diffuse_adata(adata, p=self.p)
+        df = adata.obs.rename(columns={'x': 'array_row', 'y': 'array_col'})
+
+        genes = [f'gene_{i}' for i in range(len(self.filtered))]
+        df[genes] = adata.to_df()[genes]
+        block = np.stack([sthdviz.rasterize_numerical(df, g) for g in genes], axis=0)
+
+        in_tissue = (ct_mask != self.n_celltypes-1)
+        density = total = block.sum(axis=0)
+        info = np.stack([in_tissue, density, total], axis=0)
+
+        block = torch.from_numpy(np.vstack([info, block]))
+        
+        return self.transform(block), ct_mask
+
+
 def get_dataset(config):
 
     # Compute batch size for this worker.
@@ -101,6 +135,14 @@ def get_dataset(config):
 
         train_dataset = PatchDataset(path, transform=transform)
         test_dataset = PatchDataset(path, transform=transform) # TODO: define test dataset
+
+    elif config.data.dataset == 'SIMULATE':
+        transform = transforms.Compose([transforms.RandomAffine(degrees=90, scale=(0.8, 1.2), translate=(0.2, 0.2)),
+                                        transforms.RandomHorizontalFlip(),
+                                        transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])
+
+        train_dataset = SimulatedDataset(config.data.image_size, config.data.field, transform=transform)
+        test_dataset = SimulatedDataset(config.data.image_size, config.data.field, transform=transform) # TODO: define test dataset
 
     else:
         raise NotImplementedError(
