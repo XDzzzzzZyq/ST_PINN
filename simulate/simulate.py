@@ -45,14 +45,15 @@ class Simulator:
         self.rev_method = config.reverse.method
         self.sample_per_sol = config.training.sample_per_sol
 
-    def simulate(self, genes, in_tissue, shuffle=True):
+    def simulate(self, genes, in_tissue, shuffle=True, p=2.0):
         num_steps = int((self.param.t2 - self.param.t1) / self.param.dt)
         assert num_steps >= self.sample_per_sol
 
         sample_at = torch.randperm(num_steps)[:self.sample_per_sol]
+        sample_at = (((sample_at.float() / num_steps) ** p) * num_steps).int()
 
         f = genes                                   # TODO: flatten all multi-genes
-        v = (1-in_tissue).repeat(1,2,1,1) * random.uniform(self.param.v_min, self.param.v_max)
+        v = (1.1-in_tissue).repeat(1,2,1,1) * random.uniform(self.param.v_min, self.param.v_max)
         p = in_tissue * random.uniform(self.param.p_min, self.param.p_max)
 
         # TODO: Spatially variate Re 
@@ -71,6 +72,17 @@ class Simulator:
 
             if torch.isnan(df_dt).any():
                 print(f"nan detacted at step {idx} : {t}, total sample: {len(result)}")
+                import matplotlib.pyplot as plt
+                B = df_dt.shape[0]
+                plt.figure(figsize=(B * 2, 2))
+
+                for i in range(B):
+                    plt.subplot(1, B, i + 1)
+                    plt.imshow(v[i, 0].cpu())  # Remove channel dimension
+                    plt.axis('off')
+
+                plt.tight_layout()
+                plt.savefig("output_row.png", bbox_inches='tight', pad_inches=0.1)
                 return result
 
             if idx in sample_at:

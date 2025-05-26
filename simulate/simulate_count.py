@@ -85,7 +85,7 @@ def simulate_spot_bin_cells(height, width, cells, non_cell_ct):
     
     return x, y, x_grid, y_grid, distances, mask, cell_type_mask
 
-def simulate_spot_expr_cells(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,):
+def simulate_spot_expr_cells_direct(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,):
     ''' Simulate counts based on inputs. 
     Inputs:
         x_grid, y_grid: defines input field. It matches ct_mask.
@@ -113,6 +113,12 @@ def simulate_spot_expr_cells(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,)
             cur_spot_idx = iscelltype_k[ct]
             expr[cur_spot_idx, gene] = np.random.poisson(lam = cell_type_by_gene_matrix[ct, gene], size=len(cur_spot_idx))
 
+    return expr.reshape(x_grid.shape[0], x_grid.shape[1], -1)
+
+def simulate_spot_expr_cells(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,):
+    expr = simulate_spot_expr_cells_direct(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,)
+    expr = expr.reshape(x_grid.shape[0] * x_grid.shape[1], -1)
+
     # construct adata
     obs = pd.DataFrame( {'spotid': spotid_list},index=['barcode_'+str(t) for t in spotid_list])
     obs['celltype'] = [f'ct_{int(ct)}' for ct in ct_mask.flatten()]
@@ -122,7 +128,7 @@ def simulate_spot_expr_cells(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,)
     obsm = {'spatial': obs[['x', 'y']].values}
     expr = pd.DataFrame(expr, index=obs.index, columns=var.index)
     adata= anndata.AnnData(expr, obs=obs,var=var, obsm = obsm)
-    return(adata)
+    return adata
 
 def split_list_into_bins(elements, x):
     """split elements into x bins"""
@@ -176,14 +182,14 @@ def create_ct(width, height, ncells, n_celltypes, matrix, cell_r_range=(20,30)):
         n_celltypes-1 # this is thie cell type for noncell regions
     )
 
-    adata = simulate_spot_expr_cells(
+    data = simulate_spot_expr_cells_direct(
         x_grid, 
         y_grid, 
         ct_mask,
         matrix,
     )
 
-    return adata, ct_mask
+    return data, ct_mask
 
 def diffuse_counts(data, distance, p, sigma, random_state=None):
     """

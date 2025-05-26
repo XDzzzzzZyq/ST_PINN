@@ -84,14 +84,10 @@ class SimulatedDataset(Dataset):
     def __getitem__(self, idx):
         from simulate.simulate_count import create_ct, diffuse_adata
         from STHD import sthdviz
-        adata, ct_mask = create_ct(self.size, self.size, n_celltypes=self.n_celltypes, matrix=self.matrix, ncells=3)
-        adata = diffuse_adata(adata, p=self.p)
-        df = adata.obs.rename(columns={'x': 'array_row', 'y': 'array_col'})
-
-        genes = [f'gene_{i}' for i in range(len(self.filtered))]
-        df[genes] = adata.to_df()[genes]
-        block = np.stack([sthdviz.rasterize_numerical(df, g) for g in genes], axis=0)
-
+        data, ct_mask = create_ct(self.size, self.size, n_celltypes=self.n_celltypes, matrix=self.matrix, ncells=3, cell_r_range=(self.size//4, self.size//2))
+        # TODO: Diffuse counts # adata = diffuse_adata(adata, p=self.p)
+        
+        block = data.transpose(2, 0, 1)
         in_tissue = (ct_mask != self.n_celltypes-1)
         density = total = block.sum(axis=0)
         info = np.stack([in_tissue, density, total], axis=0)
@@ -137,8 +133,7 @@ def get_dataset(config):
         test_dataset = PatchDataset(path, transform=transform) # TODO: define test dataset
 
     elif config.data.dataset == 'SIMULATE':
-        transform = transforms.Compose([transforms.RandomAffine(degrees=90, scale=(0.8, 1.2), translate=(0.2, 0.2)),
-                                        transforms.RandomHorizontalFlip(),
+        transform = transforms.Compose([transforms.RandomHorizontalFlip(),
                                         transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])
 
         train_dataset = SimulatedDataset(config.data.image_size, config.data.field, transform=transform)
