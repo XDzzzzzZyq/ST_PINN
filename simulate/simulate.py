@@ -45,11 +45,13 @@ class Simulator:
         self.rev_method = config.reverse.method
         self.sample_per_sol = config.training.sample_per_sol
 
-    def simulate(self, genes, in_tissue, shuffle=True, p=2.0):
+    def simulate(self, genes, in_tissue, shuffle=True, p=2.0, with_t0=True):
         num_steps = int((self.param.t2 - self.param.t1) / self.param.dt)
         assert num_steps >= self.sample_per_sol
 
         sample_at = torch.randperm(num_steps)[:self.sample_per_sol]
+        if with_t0:
+            sample_at = torch.cat([torch.tensor([0]), sample_at])
         sample_at = (((sample_at.float() / num_steps) ** p) * num_steps).int()
 
         f = genes                                   # TODO: flatten all multi-genes
