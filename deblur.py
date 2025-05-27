@@ -104,7 +104,8 @@ if __name__ == '__main__':
     from config.simulate_configs import get_config
     config = get_config()
     config.training.batch_size = 1
-    config.training.sample_per_sol = 2
+    config.training.sample_per_sol = 32
+    config.param.t0 = -1.0
 
     workdir = 'workdir/simu'
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
@@ -119,9 +120,10 @@ if __name__ == '__main__':
     batch, target = next(iter(eval_ds))
 
     batch = batch.to(config.device).float()
-    in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
+    in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:4]
+    info = (in_tissue, ) #if config.model.conditional else None
     B, N, W, H = genes.shape
-    samples = simulator.simulate_end(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
+    samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
 
     mode = 1
     if mode == 0:

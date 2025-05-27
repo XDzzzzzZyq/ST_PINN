@@ -33,18 +33,16 @@ class Unet(nn.Module):
     AttnBlock = functools.partial(layers.AttnBlock)
     ResnetBlock = functools.partial(ResnetBlockDDPM, act=act, temb_dim=4 * nf, dropout=config.model.dropout)
 
-    
     self.conditional = conditional = config.model.conditional
-    if conditional:
-      # Condition on noise levels.
-      modules = [nn.Linear(nf, nf * 4)]
-      modules[0].weight.data = default_initializer()(modules[0].weight.data.shape)
-      nn.init.zeros_(modules[0].bias)
-      modules.append(nn.Linear(nf * 4, nf * 4))
-      modules[1].weight.data = default_initializer()(modules[1].weight.data.shape)
-      nn.init.zeros_(modules[1].bias)
+    # Condition on noise levels.
+    modules = [nn.Linear(nf, nf * 4)]
+    modules[0].weight.data = default_initializer()(modules[0].weight.data.shape)
+    nn.init.zeros_(modules[0].bias)
+    modules.append(nn.Linear(nf * 4, nf * 4))
+    modules[1].weight.data = default_initializer()(modules[1].weight.data.shape)
+    nn.init.zeros_(modules[1].bias)
 
-    channels = len(config.data.field) #TODO: still need image boundary
+    channels = 2 #TODO: still need image boundary
 
     # Downsampling block
     modules.append(conv3x3(channels, nf))
@@ -81,22 +79,20 @@ class Unet(nn.Module):
 
     assert not hs_c
     modules.append(nn.GroupNorm(num_channels=in_ch, num_groups=32, eps=1e-6)) # perhaps unnecessary
-    modules.append(conv3x3(in_ch, channels, init_scale=0.))
+    modules.append(conv3x3(in_ch, 1, init_scale=0.))
     self.all_modules = nn.ModuleList(modules)
 
   def forward(self, x, labels):
     modules = self.all_modules
     m_idx = 0
-    if self.conditional:
-      # timestep/scale embedding
-      timesteps = labels
-      temb = layers.get_timestep_embedding(timesteps, self.nf)
-      temb = modules[m_idx](temb)
-      m_idx += 1
-      temb = modules[m_idx](self.act(temb))
-      m_idx += 1
-    else:
-      temb = None
+
+    # timestep/scale embedding
+    timesteps = labels
+    temb = layers.get_timestep_embedding(timesteps, self.nf, 1.0)
+    temb = modules[m_idx](temb)
+    m_idx += 1
+    temb = modules[m_idx](self.act(temb))
+    m_idx += 1
 
     h = x
     # Downsampling block
