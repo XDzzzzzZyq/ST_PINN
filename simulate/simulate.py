@@ -45,6 +45,25 @@ class Simulator:
         self.rev_method = config.reverse.method
         self.sample_per_sol = config.training.sample_per_sol
 
+    def simulate_end(self, genes, in_tissue):
+        num_steps = int((self.param.t2 - self.param.t1) / self.param.dt)
+        f = genes                                   # TODO: flatten all multi-genes
+        v = (1.1-in_tissue).repeat(1,2,1,1) * random.uniform(self.param.v_min, self.param.v_max)
+        p = in_tissue * random.uniform(self.param.p_min, self.param.p_max)
+
+        # TODO: Spatially variate Re 
+        Re = math.exp(random.uniform(math.log(self.param.Re_min), math.log(self.param.Re_max)))
+        dt, dx = self.param.dt, self.param.dx
+        df_dx, df_dy = ns_step.diff(f, dx)
+        dv_dx, dv_dy = ns_step.diff(v, dx)
+
+        for idx, t in enumerate(torch.linspace(self.param.t1, self.param.t2, num_steps)):
+            v, dv_dx, dv_dy = ns_step.update_velocity(v, dv_dx, dv_dy, p, dt, dx, Re)
+            # v = ns_step.vorticity_confinement(v, 1.0, dt, dx) # TODO: stability
+            p = ns_step.update_pressure(p, v, dt, dx)
+            f, df_dx, df_dy, df_dt = ns_step.update_density(f, df_dx, df_dy, v, dt, dx, Re)
+        return self.State(torch.tensor([self.param.t2]).to(f.device), f, v, p, df_dt)
+
     def simulate(self, genes, in_tissue, shuffle=True, p=2.0, with_t0=True):
         num_steps = int((self.param.t2 - self.param.t1) / self.param.dt)
         assert num_steps >= self.sample_per_sol
@@ -94,10 +113,10 @@ class Simulator:
             random.shuffle(result)
         return result
     
-    def reverse(self, model, state, info, rtol=1e-7, atol=1e-9):
+    def reverse(self, model, state, info, rtol=1e-7, atol=1e-9, num_sample=5):
         from torchdiffeq import odeint
 
-        t = torch.linspace(state.t.item(), self.param.t0, 6)
+        t = torch.linspace(state.t.item(), self.param.t0, num_sample+1)
         node = NODE(model, info)
         # noise = torch.randn_like(state.f) * 0.01 * info[0]
         with torch.no_grad():

@@ -4,7 +4,6 @@ import os
 import glob
 import time
 
-import logging
 from model import unet, unet_lite
 from model.ema import ExponentialMovingAverage
 from simulate.simulate import Simulator
@@ -12,9 +11,92 @@ import losses
 import datasets
 
 import torch
-from torch.utils import tensorboard
-from torchvision.utils import make_grid, save_image
+import torchvision.transforms.functional as F
 from utils import save_checkpoint, load_checkpoint, restore_checkpoint
+
+
+def poisson_resample(model, simulator, genes, in_tissue, s, l):
+    sample = simulator.simulate_end(genes, in_tissue)
+
+    r = 99
+    mask = F.gaussian_blur(in_tissue, (r, r), (s, s))
+    noise = torch.randn_like(in_tissue)
+    noise = F.gaussian_blur(noise, (r, r), (s, s)) * mask * sample.f.max() * l
+    sample.f = sample.f + noise
+    
+    info = (in_tissue, ) #if config.model.conditional else None
+    sol, ts = simulator.reverse(model, sample, info, rtol=1e-4, atol=1e-5, num_sample=1)
+
+    return noise, sol, sample
+
+def deblur(config, workdir, tardir):
+    config.param.Re_min = 1000.0
+    config.param.Re_max = 1000.0
+
+    checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
+    simulator = Simulator(config)
+    model = unet_lite.Unet(config).to(config.device)
+    ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
+    optimizer = losses.get_optimizer(config, model.parameters())
+    state = dict(optimizer=optimizer, model=model, ema=ema, step=0)
+    state = restore_checkpoint(checkpoint_meta_dir, state, config.device)
+
+    # TODO: tardir, now just for debug purpose
+    config.training.batch_size = 1
+    train_ds, eval_ds = datasets.get_dataset(config)
+    batch, target = next(iter(eval_ds))
+
+    n_sample = 32
+    batch = batch.to(config.device).float().repeat(n_sample,1,1,1)
+    in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
+
+    mode = 1
+    if mode == 0:
+        s = 4.0  # TODO: Infered Sigma
+        l = 10.0
+
+        noise, sol, sample = poisson_resample(model, simulator, genes, in_tissue, s, l)
+        pred = sol[1].mean(dim=0).unsqueeze(0)
+        print(sol.shape)
+
+        import matplotlib.pyplot as plt
+        fig, axe = plt.subplots(nrows=2, ncols=5, figsize=(40, 20))
+        for i in range(5):
+            axe[0,i].imshow(sol[1, i, 0].cpu())
+        axe[1, 0].imshow(total[0, 0].cpu())
+        axe[1, 1].imshow(noise[0, 0].cpu())
+        axe[1, 2].imshow(sample.f[0, 0].cpu())
+        axe[1, 3].imshow(pred[0, 0].cpu())
+        axe[1, 4].imshow(in_tissue[0, 0].cpu())
+
+        plt.savefig(f"{workdir}/plots/resample/resample | s : {s} | f : {l}.png")
+    elif mode == 1:
+        s_list = [1.0, 2.0, 4.0, 8.0]
+        l_list = [1.0, 2.0, 5.0, 10.0]
+
+        import matplotlib.pyplot as plt
+        fig, axes = plt.subplots(4, 4, figsize=(16, 16))  # 4x4 grid
+
+        for i, s in enumerate(s_list):
+            for j, l in enumerate(l_list):
+                print(f"{s} : {l}")
+                ax = axes[i, j]  # access subplot at row i, column j
+
+                # Run the function with current parameters
+                noise, sol, sample = poisson_resample(model, simulator, genes, in_tissue, s, l)
+                pred = sol[1].mean(dim=0).unsqueeze(0)
+
+                # Customize this part depending on what you want to visualize
+                # For example, show the predicted sample (assuming 1D or 2D)
+                ax.imshow(pred[0, 0].cpu())
+
+                ax.set_title(f's={s}, l={l}', fontsize=10)
+                ax.axis('off')  # or customize axes if needed
+
+        plt.tight_layout()
+        plt.savefig(f"{workdir}/plots/resample/grid | Re : {config.param.Re_min}.png")
+
+
 
 if __name__ == '__main__':
 
@@ -22,7 +104,7 @@ if __name__ == '__main__':
     from config.simulate_configs import get_config
     config = get_config()
     config.training.batch_size = 1
-    config.training.sample_per_sol = 32
+    config.training.sample_per_sol = 2
 
     workdir = 'workdir/simu'
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
@@ -39,8 +121,7 @@ if __name__ == '__main__':
     batch = batch.to(config.device).float()
     in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
     B, N, W, H = genes.shape
-    samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
-    info = (in_tissue.repeat(N,1,1,1), ) #if config.model.conditional else None
+    samples = simulator.simulate_end(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
 
     mode = 1
     if mode == 0:

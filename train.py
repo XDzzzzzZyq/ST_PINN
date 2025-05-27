@@ -116,6 +116,7 @@ if __name__ == '__main__':
     config = get_config()
     config.training.batch_size = 1
     config.data.poisson_ratio_max = 0.1
+    config.param.t0 = 0.0
 
     workdir = 'workdir/adjoint'
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")

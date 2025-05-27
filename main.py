@@ -10,7 +10,6 @@ FLAGS = flags.FLAGS
 
 config_flags.DEFINE_config_file("config", None, "Training configuration.", lock_config=True)
 flags.DEFINE_string("workdir", None, "Work directory.")
-flags.DEFINE_string("ckptdir", None, "Checkpoint directory.")
 flags.DEFINE_enum("mode", None, ["train", 'deblur', "eval"],
                   "Running mode: train or eval or deblur")
 flags.DEFINE_string("eval_folder", "eval", "The folder name for storing evaluation results")
@@ -38,8 +37,9 @@ def main(argv):                         # tensorboard --logdir=workdir/adjoint/t
     elif FLAGS.mode == "eval":
         # TODO: Evaluation pipeline
         pass
-    elif FLAGS.mode == "deblur":
-        # TODO: Diffusion removal pipeline
+    elif FLAGS.mode == "deblur":        # python main.py --config config/default_configs.py --mode deblur --workdir workdir/adjoint
+        from deblur import deblur
+        deblur(FLAGS.config, FLAGS.workdir, FLAGS.eval_folder)
         pass
     else:
         raise ValueError(f"Mode {FLAGS.mode} not recognized.")
