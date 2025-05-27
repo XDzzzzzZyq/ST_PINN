@@ -5,7 +5,7 @@ import glob
 import time
 
 import logging
-from model import unet, unet_lite
+from model.mutils import get_model
 from model.ema import ExponentialMovingAverage
 from simulate.simulate import Simulator
 import losses
@@ -32,7 +32,7 @@ def train(config, workdir):
     writer = tensorboard.SummaryWriter(tb_dir)
 
     # Initialize model.
-    model = unet_lite.Unet(config).to(config.device)
+    model = get_model(config).to(config.device)
     simulator = Simulator(config)
     ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
     optimizer = losses.get_optimizer(config, model.parameters())
@@ -112,16 +112,16 @@ def train(config, workdir):
 if __name__ == '__main__':
 
     import datasets
-    from config.default_configs import get_config
+    from config.large_configs import get_config
     config = get_config()
     config.training.batch_size = 1
     config.data.poisson_ratio_max = 0.1
     config.param.t0 = 0.0
 
-    workdir = 'workdir/adjoint'
+    workdir = 'workdir/large'
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
-    model = unet_lite.Unet(config).to(config.device)
+    model = get_model(config).to(config.device)
     ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
     optimizer = losses.get_optimizer(config, model.parameters())
     state = dict(optimizer=optimizer, model=model, ema=ema, step=0)
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
     info = (in_tissue.repeat(N,1,1,1), ) #if config.model.conditional else None
 
-    mode = 1
+    mode = 2
     if mode == 0:
         import matplotlib.pyplot as plt
         

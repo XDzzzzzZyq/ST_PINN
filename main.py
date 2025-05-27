@@ -20,7 +20,7 @@ flags.mark_flags_as_required(["workdir", "config", "mode"])
 def main(argv):                         # tensorboard --logdir=workdir/adjoint/tensorboard
     if FLAGS.mode == "train":           # python main.py --config config/default_configs.py --mode train --workdir workdir/adjoint
         from train import train         # python main.py --config config/simulate_configs.py --mode train --workdir workdir/simu
-
+                                        # python main.py --config config/large_configs.py --mode train --workdir workdir/large
         # Create the working directory
         os.makedirs(FLAGS.workdir, exist_ok=True)
         # Set logger so that it outputs to both console and file

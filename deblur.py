@@ -4,7 +4,7 @@ import os
 import glob
 import time
 
-from model import unet, unet_lite
+from model.mutils import get_model
 from model.ema import ExponentialMovingAverage
 from simulate.simulate import Simulator
 import losses
@@ -35,7 +35,7 @@ def deblur(config, workdir, tardir):
 
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
-    model = unet_lite.Unet(config).to(config.device)
+    model = get_model(config).to(config.device)
     ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
     optimizer = losses.get_optimizer(config, model.parameters())
     state = dict(optimizer=optimizer, model=model, ema=ema, step=0)
@@ -110,7 +110,7 @@ if __name__ == '__main__':
     workdir = 'workdir/simu'
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
-    model = unet_lite.Unet(config).to(config.device)
+    model = get_model(config).to(config.device)
     ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
     optimizer = losses.get_optimizer(config, model.parameters())
     state = dict(optimizer=optimizer, model=model, ema=ema, step=0)

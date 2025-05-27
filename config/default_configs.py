@@ -36,6 +36,7 @@ def get_default_configs():
     training.snapshot_freq_save = 250       # will not overwrite
     
     config.model = model = ml_collections.ConfigDict()
+    model.type = 'unet_lite'
     model.ema_rate = 0.95
     model.normalization = 'GroupNorm'
     model.nonlinearity = 'swish'
