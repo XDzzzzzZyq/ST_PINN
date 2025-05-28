@@ -72,7 +72,7 @@ def get_default_configs():
 
     # reverse
     config.reverse = reverse = ml_collections.ConfigDict()
-    reverse.method = 'euler' # ['None', 'euler', 'midpoint', 'rk4', 'dopri5', ...] https://github.com/rtqichen/torchdiffeq
+    reverse.method = 'dopri5' # ['None', 'euler', 'midpoint', 'rk4', 'dopri5', ...] https://github.com/rtqichen/torchdiffeq
     reverse.node = 'adjoint' # ['adjoint', 'aca'] 
     
     # optimization

@@ -76,7 +76,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> update_density(
     const torch::Tensor df_dx,
     const torch::Tensor df_dy,
     const torch::Tensor& vel_c,
-    float dt, float dx, float Re
+    float dt, float dx, const torch::Tensor& Re
 ) {
     CHECK_CUDA(dens_c);
     CHECK_CUDA(df_dx);
@@ -136,7 +136,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> update_velocity(
     const torch::Tensor& dv_dx,
     const torch::Tensor& dv_dy,
     const torch::Tensor& pres_c,
-    float dt, float dx, float Re)
+    float dt, float dx, const torch::Tensor& Re)
 {
     CHECK_CUDA(vel_c);
     CHECK_CUDA(pres_c);

@@ -64,21 +64,26 @@ class Simulator:
             f, df_dx, df_dy, df_dt = ns_step.update_density(f, df_dx, df_dy, v, dt, dx, Re)
         return self.State(torch.tensor([self.param.t2]).to(f.device), f, v, p, df_dt)
 
-    def simulate(self, genes, in_tissue, shuffle=True, p=2.0, with_t0=True):
+    def simulate(self, genes, in_tissue, shuffle=True, p=1.0, with_t0=True):
         num_steps = int((self.param.t2 - self.param.t1) / self.param.dt)
         assert num_steps >= self.sample_per_sol
 
         sample_at = torch.randperm(num_steps)[:self.sample_per_sol]
+        if p != 1.0:
+            sample_at = (((sample_at.float() / num_steps) ** p) * num_steps).int()
         if with_t0:
             sample_at = torch.cat([torch.tensor([0]), sample_at])
-        sample_at = (((sample_at.float() / num_steps) ** p) * num_steps).int()
+
+        v_rand = torch.ones_like(in_tissue).uniform_(self.param.v_min, self.param.v_max)
+        p_rand = torch.ones_like(in_tissue).uniform_(self.param.p_min, self.param.p_max)
 
         f = genes                                   # TODO: flatten all multi-genes
-        v = (1.1-in_tissue).repeat(1,2,1,1) * random.uniform(self.param.v_min, self.param.v_max)
-        p = in_tissue * random.uniform(self.param.p_min, self.param.p_max)
+        v = (1.1-in_tissue).repeat(1,2,1,1) * v_rand
+        p = in_tissue * p_rand
 
         # TODO: Spatially variate Re 
-        Re = math.exp(random.uniform(math.log(self.param.Re_min), math.log(self.param.Re_max)))
+        Re = torch.empty(f.shape[0], device=f.device)
+        Re = Re.uniform_(math.log(self.param.Re_min), math.log(self.param.Re_max)).exp()[:, None, None, None]
         dt, dx = self.param.dt, self.param.dx
         df_dx, df_dy = ns_step.diff(f, dx)
         dv_dx, dv_dy = ns_step.diff(v, dx)

@@ -14,11 +14,15 @@ ns_step_forward = load("ns_step_forward",
 def diff(dens, dx):
     return ns_step_forward.diff(dens, dx)
 
-def update_density(dens, df_dx, df_dy, vel, dt, dx, Re=10000000.0):
+def update_density(dens, df_dx, df_dy, vel, dt, dx, Re):
+    if isinstance(Re, float):
+        Re = torch.ones_like(dens) * Re
     f_n, df_dx, df_dy = ns_step_forward.update_density(dens, df_dx, df_dy, vel, dt, dx, Re)
     return f_n, df_dx, df_dy, (f_n - dens) / dt
 
-def update_velocity(vel, dv_dx, dv_dy, pres, dt, dx, Re=10000000.0):
+def update_velocity(vel, dv_dx, dv_dy, pres, dt, dx, Re):
+    if isinstance(Re, float):
+        Re = torch.ones_like(vel) * Re
     vel_n = ns_step_forward.update_velocity(vel, dv_dx, dv_dy, pres, dt, dx, Re)
     return vel_n
 
