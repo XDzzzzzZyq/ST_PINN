@@ -19,6 +19,12 @@ def get_optimizer(config, params, lr_mul=1.0):
                                betas=(config.optim.beta1, 0.999), 
                                eps=config.optim.eps,
                                weight_decay=decay)
+    elif config.optim.optimizer == 'AdamW':
+        optimizer = optim.AdamW(params, 
+                               lr=lr*lr_mul, 
+                               betas=(config.optim.beta1, 0.999), 
+                               eps=config.optim.eps,
+                               weight_decay=decay)
     else:
         raise NotImplementedError(f'Optimizer {config.optim.optimizer} not supported yet!')
 
@@ -35,7 +41,7 @@ def get_optimize_fn(config):
         """Optimizes with warmup and gradient clipping (disabled if negative)."""
         if warmup > 0:
             for g in optimizer.param_groups:
-                g['lr'] = lr * np.minimum(step / warmup, 1.0)
+                g['lr'] = lr * min(step / warmup, 1.0)
         if grad_clip >= 0:
             torch.nn.utils.clip_grad_norm_(params, max_norm=grad_clip)
         optimizer.step()
@@ -134,7 +140,7 @@ def get_shooting_step_fn(simulator, train, optimize_fn=None):
         else:
             model.eval()        
         
-        pred = simulator.reverse_adjoint_shooting(model, samples, info, rtol=1e-3, atol=1e-3)
+        pred = simulator.reverse_adjoint_shooting(model, samples, info, rtol=1e-4, atol=1e-5)
         targ = torch.stack([sample.f for sample in samples[::-1]]).to(pred.device)
         return distance(pred, targ)
 
