@@ -4,7 +4,6 @@ import pandas as pd
 import anndata
 import squidpy as sq
 import random
-from tqdm import tqdm
 from typing import Tuple, List, Dict
 
 def simulate_cells(
@@ -37,7 +36,7 @@ def simulate_cells(
     cell_r = np.random.randint(cell_r_range[0], cell_r_range[1], size=ncells)
     cell_ct = np.random.randint(n_cell_types, size=ncells)
     cells = []
-    for i in tqdm(range(ncells), total=ncells, desc='generating cells'):
+    for i in range(ncells):
         cells.append({'x':cell_x[i], 'y':cell_y[i], 'r':cell_r[i], 'ct':cell_ct[i]})
     return cells
 
@@ -66,26 +65,26 @@ def simulate_spot_bin_cells(height, width, cells, non_cell_ct):
     ######## cell mask ##########
     
     distances = np.zeros([len(cells), height, width])
-    for i, cell in tqdm(enumerate(cells), total=len(cells), desc='calculating distance'):
+    for i, cell in enumerate(cells):
         cur_distance = np.sqrt((x_grid - cell['x'])**2 + (y_grid - cell['y'])**2)
         cur_distance[cur_distance>cell['r']] = np.inf
         distances[i] = cur_distance
     
     mask = distances.argmin(0)
-    for i in tqdm(range(width), total=width, desc='calculating cellid mask'):
+    for i in range(width):
         for j in range(height):
             if set(distances[:, j, i]) == {np.inf}:
                 mask[j,i] = -1
 
     cell_type_mask = np.ones(mask.shape) * non_cell_ct
-    for i in tqdm(range(width), total=width, desc='calculating celltype_id mask'):
+    for i in range(width):
         for j in range(height):
             if mask[j,i] != -1:
                 cell_type_mask[j,i] = cells[mask[j,i]]['ct']
     
     return x, y, x_grid, y_grid, distances, mask, cell_type_mask
 
-def simulate_spot_expr_cells_direct(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,):
+def simulate_spot_expr_cells_direct(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix, factor=1.0):
     ''' Simulate counts based on inputs. 
     Inputs:
         x_grid, y_grid: defines input field. It matches ct_mask.
@@ -107,16 +106,17 @@ def simulate_spot_expr_cells_direct(x_grid, y_grid, ct_mask, cell_type_by_gene_m
     for i in celltype_list:
         iscelltype_k[i] = spotid_list[(ct_mask==i).flatten()]
 
+    density = np.zeros([n_spot, n_gene])
     expr = np.zeros([n_spot, n_gene])
-    for ct in tqdm(celltype_list, total=n_celltype, desc='generate cell counts'):
+    for ct in celltype_list:
         for gene in gene_list:
             cur_spot_idx = iscelltype_k[ct]
-            expr[cur_spot_idx, gene] = np.random.poisson(lam = cell_type_by_gene_matrix[ct, gene], size=len(cur_spot_idx))
-
-    return expr.reshape(x_grid.shape[0], x_grid.shape[1], -1)
+            density[cur_spot_idx, gene] = cell_type_by_gene_matrix[ct, gene] * factor
+    expr = np.random.poisson(lam = density)
+    return expr.reshape(x_grid.shape[0], x_grid.shape[1], -1), density.reshape(x_grid.shape[0], x_grid.shape[1], -1)
 
 def simulate_spot_expr_cells(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,):
-    expr = simulate_spot_expr_cells_direct(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,)
+    expr, density = simulate_spot_expr_cells_direct(x_grid, y_grid, ct_mask, cell_type_by_gene_matrix,)
     expr = expr.reshape(x_grid.shape[0] * x_grid.shape[1], -1)
 
     # construct adata
@@ -166,30 +166,31 @@ def create_matrix(filtered=None):
 
     return n_celltypes, n_gene, cell_type_by_gene_matrix_normalized
 
-def create_ct(width, height, ncells, n_celltypes, matrix, cell_r_range=(20,30)):
+def create_ct(size, ncells, n_celltypes, matrix, cell_r_range=(20,30), factor=1.0):
     cells = simulate_cells(
-        height, 
-        width, 
+        size, 
+        size, 
         ncells, 
         cell_r_range, 
         n_celltypes-1 # reserving the last one to fill noncell regions
     )
 
     x, y, x_grid, y_grid, distances, mask, ct_mask = simulate_spot_bin_cells(
-        height, 
-        width, 
+        size, 
+        size, 
         cells,
         n_celltypes-1 # this is thie cell type for noncell regions
     )
 
-    data = simulate_spot_expr_cells_direct(
+    data, density = simulate_spot_expr_cells_direct(
         x_grid, 
         y_grid, 
         ct_mask,
         matrix,
+        factor=factor
     )
 
-    return data, ct_mask
+    return data, density, ct_mask
 
 def diffuse_counts(data, distance, p, sigma, random_state=None):
     """
@@ -238,7 +239,7 @@ def diffuse_counts(data, distance, p, sigma, random_state=None):
     diffused_in = np.zeros_like(data, dtype=int)
     
     # Loop over each cell
-    for i in tqdm(range(n)):
+    for i in range(n):
         # Compute Gaussian weights for diffusion from cell i using its distances to all cells.
         # Here, we exclude self-diffusion by setting the weight for cell i to zero.
         weights = np.exp(- (distance[i, :]**2) / (2 * sigma**2))

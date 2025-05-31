@@ -74,8 +74,8 @@ class Simulator:
         if with_t0:
             sample_at = torch.cat([torch.tensor([0]), sample_at])
 
-        v_rand = torch.ones_like(in_tissue).uniform_(self.param.v_min, self.param.v_max)
-        p_rand = torch.ones_like(in_tissue).uniform_(self.param.p_min, self.param.p_max)
+        v_rand = torch.ones(in_tissue.shape[0], device=in_tissue.device).uniform_(self.param.v_min, self.param.v_max)[:, None, None, None]
+        p_rand = torch.ones(in_tissue.shape[0], device=in_tissue.device).uniform_(self.param.p_min, self.param.p_max)[:, None, None, None]
 
         f = genes                                   # TODO: flatten all multi-genes
         v = (1.1-in_tissue).repeat(1,2,1,1) * v_rand

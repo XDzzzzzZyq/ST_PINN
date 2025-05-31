@@ -68,15 +68,17 @@ class Poisson:
         return torch.cat([bounds, density, counts, counts], dim=0)
 
 class SimulatedDataset(Dataset):
-    def __init__(self, size, field, p=0.1, train=True, transform=None):
+    def __init__(self, size, field, train=True, p=0.1, transform=None, factor=1.0, masked=True):
         from simulate.simulate_count import create_matrix
         self.p = 0.1
         self.transform = transform
         self.filtered = field
         self.n_celltypes, self.n_gene, self.matrix = create_matrix(self.filtered)
         self.size = size
+        self.factor = factor
+        self.masked = masked
 
-        print(self.n_celltypes, self.n_gene)
+        print(f"cell types : {self.n_celltypes} | genes num : {self.n_gene}")
 
     def __len__(self):
         return int(1e8)
@@ -84,12 +86,19 @@ class SimulatedDataset(Dataset):
     def __getitem__(self, idx):
         from simulate.simulate_count import create_ct, diffuse_adata
         from STHD import sthdviz
-        data, ct_mask = create_ct(self.size, self.size, n_celltypes=self.n_celltypes, matrix=self.matrix, ncells=3, cell_r_range=(self.size//4, self.size//2))
+        data, density, ct_mask = create_ct(self.size, n_celltypes=self.n_celltypes, matrix=self.matrix, ncells=3, cell_r_range=(self.size//4, self.size//2), factor=self.factor)
         # TODO: Diffuse counts # adata = diffuse_adata(adata, p=self.p)
         
-        block = data.transpose(2, 0, 1)
+        block = data.transpose(2, 0, 1)[0:1]
+        density = density.transpose(2, 0, 1)[0]
         in_tissue = (ct_mask != self.n_celltypes-1)
-        density = total = block.sum(axis=0)
+        total = block.sum(axis=0)
+
+        if self.masked:
+            density = density * in_tissue
+            total = total * in_tissue
+            block = block * in_tissue[None, :, :]
+
         info = np.stack([in_tissue, density, total], axis=0)
 
         block = torch.from_numpy(np.vstack([info, block]))
@@ -136,8 +145,8 @@ def get_dataset(config):
         transform = transforms.Compose([transforms.RandomHorizontalFlip(),
                                         transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])
 
-        train_dataset = SimulatedDataset(config.data.image_size, config.data.field, transform=transform)
-        test_dataset = SimulatedDataset(config.data.image_size, config.data.field, transform=transform) # TODO: define test dataset
+        train_dataset = SimulatedDataset(config.data.image_size, config.data.field, transform=transform, factor=config.data.factor, masked=config.data.masked)
+        test_dataset = SimulatedDataset(config.data.image_size, config.data.field, transform=transform, factor=config.data.factor, masked=config.data.masked) # TODO: define test dataset
 
     else:
         raise NotImplementedError(

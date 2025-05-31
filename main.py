@@ -37,7 +37,7 @@ def main(argv):                         # tensorboard --logdir=workdir/adjoint/t
     elif FLAGS.mode == "eval":
         # TODO: Evaluation pipeline
         pass
-    elif FLAGS.mode == "deblur":        # python main.py --config config/default_configs.py --mode deblur --workdir workdir/adjoint
+    elif FLAGS.mode == "deblur":        # python main.py --config config/large_configs.py --mode deblur --workdir workdir/large
         from deblur import deblur
         deblur(FLAGS.config, FLAGS.workdir, FLAGS.eval_folder)
         pass

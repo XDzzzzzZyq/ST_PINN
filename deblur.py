@@ -15,14 +15,15 @@ import torchvision.transforms.functional as F
 from utils import save_checkpoint, load_checkpoint, restore_checkpoint
 
 
-def poisson_resample(model, simulator, genes, in_tissue, s, l):
+def poisson_resample(model, simulator, genes, in_tissue, s, l, n_sample=64):
+    genes = genes.repeat(n_sample, 1, 1, 1)
+    in_tissue = in_tissue.repeat(n_sample, 1, 1, 1)
     sample = simulator.simulate_end(genes, in_tissue)
 
     r = 99
-    mask = F.gaussian_blur(in_tissue, (r, r), (s, s))
     noise = torch.randn_like(in_tissue)
-    noise = F.gaussian_blur(noise, (r, r), (s, s)) * mask * sample.f.max() * l
-    sample.f = sample.f + noise
+    noise = F.gaussian_blur(noise, (r, r), (s, s)) * l
+    sample.f = sample.f + noise * sample.f
     
     info = (in_tissue, ) #if config.model.conditional else None
     sol, ts = simulator.reverse(model, sample, info, rtol=1e-4, atol=1e-5, num_sample=1)
@@ -30,8 +31,9 @@ def poisson_resample(model, simulator, genes, in_tissue, s, l):
     return noise, sol, sample
 
 def deblur(config, workdir, tardir):
-    config.param.Re_min = 1000.0
-    config.param.Re_max = 1000.0
+    config.param.Re_min = config.param.Re_max = 1004.1
+    config.data.poisson_ratio_min = config.data.poisson_ratio_max = 0.3
+    config.param.t0 = 0.0
 
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
@@ -42,20 +44,20 @@ def deblur(config, workdir, tardir):
     state = restore_checkpoint(checkpoint_meta_dir, state, config.device)
 
     # TODO: tardir, now just for debug purpose
-    config.training.batch_size = 1
+    B = config.training.batch_size = 1
     train_ds, eval_ds = datasets.get_dataset(config)
     batch, target = next(iter(eval_ds))
 
     n_sample = 32
-    batch = batch.to(config.device).float().repeat(n_sample,1,1,1)
-    in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
+    batch = batch.to(config.device).float()
+    in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:4]
 
     mode = 1
     if mode == 0:
         s = 4.0  # TODO: Infered Sigma
         l = 10.0
 
-        noise, sol, sample = poisson_resample(model, simulator, genes, in_tissue, s, l)
+        noise, sol, sample = poisson_resample(model, simulator, genes, in_tissue, s, l, n_sample)
         pred = sol[1].mean(dim=0).unsqueeze(0)
         print(sol.shape)
 
@@ -69,17 +71,21 @@ def deblur(config, workdir, tardir):
         axe[1, 3].imshow(pred[0, 0].cpu())
         axe[1, 4].imshow(in_tissue[0, 0].cpu())
 
+        os.makedirs(f"{workdir}/plots/resample", exist_ok=True)
         plt.savefig(f"{workdir}/plots/resample/resample | s : {s} | f : {l}.png")
     elif mode == 1:
-        s_list = [1.0, 2.0, 4.0, 8.0]
-        l_list = [1.0, 2.0, 5.0, 10.0]
+        s_list = [7.5, 10.0, 15, 20.0]
+        l_list = [2.5, 5.0, 7.5, 10.0]
+        mse_loss = torch.nn.MSELoss()
 
         import matplotlib.pyplot as plt
-        fig, axes = plt.subplots(4, 4, figsize=(16, 16))  # 4x4 grid
+        fig, axes = plt.subplots(len(s_list), len(l_list), figsize=(16, 16))  # 4x4 grid
+
+        vmin, vmax = density.min().item(), density.max().item()
+        loss_table = torch.ones(len(s_list), len(l_list))
 
         for i, s in enumerate(s_list):
             for j, l in enumerate(l_list):
-                print(f"{s} : {l}")
                 ax = axes[i, j]  # access subplot at row i, column j
 
                 # Run the function with current parameters
@@ -88,26 +94,52 @@ def deblur(config, workdir, tardir):
 
                 # Customize this part depending on what you want to visualize
                 # For example, show the predicted sample (assuming 1D or 2D)
-                ax.imshow(pred[0, 0].cpu())
+                ax.imshow(pred[0, 0].cpu(), vmin=vmin, vmax=vmax)
+                loss = mse_loss(pred, density).item()
 
-                ax.set_title(f's={s}, l={l}', fontsize=10)
+                ax.set_title(f's={s}, l={l}, loss={loss / 1e-3:.3f}e-3', fontsize=10)
+                loss_table[i, j] = loss
+                
+                print(f"{s} : {l} : loss={loss}")
                 ax.axis('off')  # or customize axes if needed
 
+        noise, sol, sample = poisson_resample(model, simulator, genes, in_tissue, 1.0, 0.0)
+        pred = sol[1].mean(dim=0).unsqueeze(0)
+        loss = mse_loss(pred, density).item()
+        print(f"no preturb : loss={loss / 1e-3:.3f}e-3")
+        ori_loss = mse_loss(genes, density).item()
+        print(f"Original : loss={ori_loss / 1e-3:.3f}e-3")
+        nd_loss = mse_loss(sample.f, density).item()
+        print(f"No reverse : loss={nd_loss / 1e-3:.3f}e-3")
+
         plt.tight_layout()
-        plt.savefig(f"{workdir}/plots/resample/grid | Re : {config.param.Re_min}.png")
+        os.makedirs(f"{workdir}/plots/resample", exist_ok=True)
+        plt.savefig(f"{workdir}/plots/resample/grid | Re : {config.param.Re_min} | Poi : {config.data.poisson_ratio_max}.png")
+
+        fig, axe = plt.subplots(nrows=1, ncols=5, figsize=(40, 10))
+        axe[0].imshow(density[0, 0].cpu())
+        axe[1].imshow(genes[0, 0].cpu())
+        axe[2].imshow(sample.f[0, 0].cpu())
+        axe[3].imshow(sol[1, 0, 0].cpu())
+        axe[4].imshow(loss_table)
+        fig.text(0.5, 0.02, f"No preturb est : loss = {loss / 1e-3:.3f}e-3 | Original : loss = {ori_loss / 1e-3:.3f}e-3 | No reverse : loss = {nd_loss / 1e-3:.3f}e-3 | t= = {config.param.t0}",
+         ha='center', va='center', fontsize=12)
+        plt.savefig(f"{workdir}/plots/resample/grid | Re : {config.param.Re_min} | Poi : {config.data.poisson_ratio_max} compare.png")
+
+        
 
 
 
 if __name__ == '__main__':
 
     import datasets
-    from config.simulate_configs import get_config
+    from config.combine_configs import get_config
     config = get_config()
     config.training.batch_size = 1
     config.training.sample_per_sol = 32
     config.param.t0 = -1.0
 
-    workdir = 'workdir/simu'
+    workdir = 'workdir/simu2'
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
     model = get_model(config).to(config.device)
@@ -219,8 +251,10 @@ if __name__ == '__main__':
             print(p.mean(), g.mean(), p.mean()/g.mean())
             tl.append(sample.t.item())
             r.append((p.mean()/g.mean()).item())
+            fig.text(0.5, 0.02, f"t={t.item():.2f}",
+                ha='center', va='center', fontsize=12)
 
-            plt.savefig(f"{workdir}/plots/pred/simulate i={idx+1} | t={t.item():.2f}.png")
+            plt.savefig(f"{workdir}/plots/pred/simulate i={idx+1}.png")
             plt.close()
 
         d = {"t":tl, "r":r}
