@@ -64,25 +64,29 @@ def get_step_fn(simulator, train, optimize_fn=None):
             pred = model(torch.cat([*info, sample.f], dim=1), sample.t)
         return distance(pred, sample.df_dt) + pred.mean(dim=(1,2,3)).square().mean()
 
-    def step_fn(state, sample, info):
+    def step_fn(state, samples, info):
         model = state['model']
-        if train:
-            optimizer = state['optimizer']
-            optimizer.zero_grad()
-            loss = loss_fn(model, sample, info) * (sample.t ** 2) * 1e2   # Loss normalization
-            loss.backward()
-            optimize_fn(optimizer, model.parameters(), step=state['step'])
-            state['ema'].update(model.parameters())
-            state['step'] += 1
-        else:
-            with torch.no_grad():
-                ema = state['ema']
-                ema.store(model.parameters())
-                ema.copy_to(model.parameters())
-                loss = loss_fn(model, sample, info)
-                ema.restore(model.parameters())
+        loss = 0
+        for sample in samples:
+            if train:
+                optimizer = state['optimizer']
+                optimizer.zero_grad()
+                loss_cur = loss_fn(model, sample, info) * (sample.t ** 2) * 1e2   # Loss normalization
+                loss_cur.backward()
+                optimize_fn(optimizer, model.parameters(), step=state['step'])
+                state['ema'].update(model.parameters())
+            else:
+                with torch.no_grad():
+                    ema = state['ema']
+                    ema.store(model.parameters())
+                    ema.copy_to(model.parameters())
+                    loss_cur = loss_fn(model, sample, info)
+                    ema.restore(model.parameters())
+            loss += loss_cur.item()
 
-        return loss
+        if train:
+            state['step'] += 1
+        return loss / (len(samples) - 1)
 
     return step_fn
 

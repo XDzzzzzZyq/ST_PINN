@@ -48,7 +48,7 @@ def deblur(config, workdir, tardir):
     train_ds, eval_ds = datasets.get_dataset(config)
     batch, target = next(iter(eval_ds))
 
-    n_sample = 32
+    n_sample = 64
     batch = batch.to(config.device).float()
     in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:4]
 
@@ -140,7 +140,7 @@ if __name__ == '__main__':
     config.param.t0 = -1.0
 
     workdir = 'workdir/simu2'
-    checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
+    checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint-pretrain.pth")
     simulator = Simulator(config)
     model = get_model(config).to(config.device)
     ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     B, N, W, H = genes.shape
     samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
 
-    mode = 1
+    mode = 2
     if mode == 0:
         import matplotlib.pyplot as plt
         

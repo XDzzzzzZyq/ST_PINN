@@ -42,10 +42,11 @@ def train(config, workdir):
     checkpoint_dir = os.path.join(workdir, "checkpoints")
     # Intermediate checkpoints to resume training after pre-emption in cloud environments
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
+    checkpoint_pretrain_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint-pretrain.pth")
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(os.path.dirname(checkpoint_meta_dir), exist_ok=True)
     # Resume training when intermediate checkpoints are detected
-    state = restore_checkpoint(checkpoint_meta_dir, state, config.device)
+    state = restore_checkpoint(checkpoint_meta_dir, state, config.device, pckpt_dir=checkpoint_pretrain_dir)
     initial_step = int(state['step'])
 
     # Build data iterators
@@ -108,6 +109,98 @@ def train(config, workdir):
             save_checkpoint(os.path.join(checkpoint_dir, f'checkpoint_{save_step}.pth'), state)
             print(f">>> checkpoint_{save_step}.pth saved")
 
+def pretrain(config, workdir):
+    """Runs the supervised pretraining.
+
+    Args:
+        config: Configuration to use.
+        workdir: Working directory for checkpoints and TF summaries. If this
+        contains checkpoint training will be resumed from the latest checkpoint.
+    """
+    torch.manual_seed(config.seed)
+
+    # Create directories for experimental logs
+    tb_dir = os.path.join(workdir, "tensorboard")
+    os.makedirs(tb_dir, exist_ok=True)
+    writer = tensorboard.SummaryWriter(tb_dir)
+
+    # Initialize model.
+    model = get_model(config).to(config.device)
+    simulator = Simulator(config)
+    ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
+    optimizer = losses.get_optimizer(config, model.parameters())
+    state = dict(optimizer=optimizer, model=model, ema=ema, step=0)
+
+    # Create checkpoints directory
+    checkpoint_dir = os.path.join(workdir, "checkpoints")
+    # Intermediate checkpoints to resume training after pre-emption in cloud environments
+    checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint-pretrain.pth")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(checkpoint_meta_dir), exist_ok=True)
+    # Resume training when intermediate checkpoints are detected
+    state = restore_checkpoint(checkpoint_meta_dir, state, config.device)
+    initial_step = int(state['step'])
+
+    # Build data iterators
+    train_ds, eval_ds = datasets.get_dataset(config)
+    train_iter = iter(train_ds)     # pytype: disable=wrong-arg-types
+    eval_iter = iter(eval_ds)       # pytype: disable=wrong-arg-types
+
+    # Build one-step training and evaluation functions
+    optimize_fn = losses.get_optimize_fn(config)
+    train_step_fn = losses.get_step_fn(simulator, train=True, optimize_fn=optimize_fn)
+    eval_step_fn = losses.get_step_fn(simulator, train=False)
+
+    num_train_steps = config.training.n_iters
+    print("num_train_steps", num_train_steps)
+
+    # In case there are multiple hosts (e.g., TPU pods), only log to host 0
+    logging.info("Starting training loop at step %d." % (initial_step,))
+
+    for step in range(initial_step, num_train_steps+1):
+        try:
+            batch, target = next(train_iter)
+        except StopIteration:
+            train_iter = iter(train_ds)
+
+        batch = batch.to(config.device).float()
+        in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
+        B, N, W, H = genes.shape
+        info = (in_tissue.repeat(N,1,1,1), ) #if config.model.conditional else None
+        # Execute one training step
+        samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=True)
+        loss = train_step_fn(state, samples, info)
+
+        if step % config.training.log_freq == 0:
+            logging.info("step: %d, training_loss: %.5e" % (step, loss))
+            writer.add_scalar("training_loss", loss, step)
+
+        # Save a temporary checkpoint to resume training after pre-emption periodically
+        if step != 0 and step % config.training.snapshot_freq_for_preemption == 0:
+            save_checkpoint(checkpoint_meta_dir, state)
+
+        # Report the loss on an evaluation dataset periodically
+        if step % config.training.eval_freq == 0:
+            try:
+                batch, _ = next(eval_iter)
+            except StopIteration:
+                eval_iter = iter(eval_ds)
+            batch = batch.to(config.device).float()
+            in_tissue, density, total, genes = batch[:, 0:1], batch[:, 1:2], batch[:, 2:3], batch[:, 3:]
+            B, N, W, H = genes.shape
+            info = (in_tissue.repeat(N,1,1,1), ) #if config.model.conditional else None
+            samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=True)
+            eval_loss = eval_step_fn(state, samples, info)
+            logging.info("step: %d, eval_loss: %.5e" % (step, eval_loss))
+            writer.add_scalar("eval_loss", eval_loss, step)
+
+        # Save a checkpoint periodically and generate samples if needed
+        if step != 0 and step % config.training.snapshot_freq == 0 or step == num_train_steps:
+            # Save the checkpoint.
+            save_step = step // config.training.snapshot_freq
+            save_checkpoint(os.path.join(checkpoint_dir, f'checkpoint_{save_step}-pretrain.pth'), state)
+            print(f">>> checkpoint_{save_step}.pth saved")
+
 
 if __name__ == '__main__':
 
@@ -136,7 +229,7 @@ if __name__ == '__main__':
     samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
     info = (in_tissue.repeat(N,1,1,1), ) #if config.model.conditional else None
 
-    mode = 2
+    mode = 1
     if mode == 0:
         import matplotlib.pyplot as plt
         
@@ -170,7 +263,7 @@ if __name__ == '__main__':
         from matplotlib import gridspec
         
         state = samples[int((len(samples)-1) * 0.5)]
-        state = samples[-1]
+        # state = samples[-1]
         print(state.t.item())
 
         def draw():
@@ -230,8 +323,10 @@ if __name__ == '__main__':
             print(p.mean(), g.mean(), p.mean()/g.mean())
             tl.append(sample.t.item())
             r.append((p.mean()/g.mean()).item())
+            fig.text(0.5, 0.02, f"t={t.item():.2f}",
+                ha='center', va='center', fontsize=12)
 
-            plt.savefig(f"{workdir}/plots/pred/simulate i={idx+1} | t={t.item():.2f}.png")
+            plt.savefig(f"{workdir}/plots/pred/simulate i={idx+1}.png")
             plt.close()
 
         d = {"t":tl, "r":r}
