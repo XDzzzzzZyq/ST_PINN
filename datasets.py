@@ -42,7 +42,7 @@ class PatchDataset(Dataset):
 
 class Pad:
     def __init__(self, crop_size, padding_mode='constant'):
-        self.crop_size = crop_size
+        self.crop_size = crop_size if hasattr(crop_size, '__getitem__') else (crop_size, crop_size)
         self.padding_mode = padding_mode
 
     def __call__(self, img):
@@ -142,7 +142,8 @@ def get_dataset(config):
         test_dataset = PatchDataset(path, transform=transform) # TODO: define test dataset
 
     elif config.data.dataset == 'SIMULATE':
-        transform = transforms.Compose([transforms.RandomHorizontalFlip(),
+        transform = transforms.Compose([Pad(config.data.image_size + 2 * config.data.padding),
+                                        transforms.RandomHorizontalFlip(),
                                         transforms.GaussianBlur(kernel_size=5, sigma=(config.data.pre_blur, config.data.pre_blur))])
 
         train_dataset = SimulatedDataset(config.data.image_size, config.data.field, transform=transform, factor=config.data.factor, masked=config.data.masked)
