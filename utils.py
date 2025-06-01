@@ -40,14 +40,15 @@ def get_ckptdir(workdir, ckpt="checkpoints", ckpt_meta="checkpoints-meta"):
 def restore_checkpoint(ckpt_dir, state, device, pckpt_dir=None):
     if not os.path.exists(ckpt_dir):
         os.makedirs(os.path.dirname(ckpt_dir), exist_ok=True)
-        logging.warning(f"No checkpoint found at {ckpt_dir}. "
-                        f"Trying the pretrained checkpoint")
-        if not os.path.exists(pckpt_dir):
-            logging.warning(f"No pretrianed checkpoint found at {pckpt_dir}.")
-        else:
-            print(f"Loading pretained model at {pckpt_dir}")
-            loaded_state = torch.load(pckpt_dir, map_location=device)
-            state['model'].load_state_dict(loaded_state['model'], strict=False)
+        logging.warning(f"No checkpoint found at {ckpt_dir}.")
+        if pckpt_dir is not None:
+            logging.warning(f"Searching pretraining checkpoint...")
+            if not os.path.exists(pckpt_dir):
+                logging.warning(f"No pretrianed checkpoint found at {pckpt_dir}.")
+            else:
+                logging.warning(f"Loading pretained model at {pckpt_dir}")
+                loaded_state = torch.load(pckpt_dir, map_location=device)
+                state['model'].load_state_dict(loaded_state['model'], strict=False)
     else:
         loaded_state = torch.load(ckpt_dir, map_location=device)
 
