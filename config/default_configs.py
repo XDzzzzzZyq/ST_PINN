@@ -29,6 +29,7 @@ def get_default_configs():
     training.sub_step = 1
     
     training.n_iters = 10000
+    training.n_iters_pretrain = 200
     training.snapshot_freq = 100
     training.snapshot_freq_for_preemption = 10
     training.log_freq = 1

@@ -151,7 +151,7 @@ def pretrain(config, workdir):
     train_step_fn = losses.get_step_fn(simulator, train=True, optimize_fn=optimize_fn)
     eval_step_fn = losses.get_step_fn(simulator, train=False)
 
-    num_train_steps = config.training.n_iters
+    num_train_steps = config.training.n_iters_pretrain
     print("num_train_steps", num_train_steps)
 
     # In case there are multiple hosts (e.g., TPU pods), only log to host 0
