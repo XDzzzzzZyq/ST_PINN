@@ -9,7 +9,10 @@ def get_config():
     
     config.data = sim_config.data
     # config.training = sim_config.training
-    config.model = lrg_config.model
     config.training.batch_size = 16
+
+    config.model = lrg_config.model
+    config.model.rtol = 1e-3
+    config.model.atol = 1e-3
 
     return config

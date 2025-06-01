@@ -26,7 +26,7 @@ def poisson_resample(model, simulator, genes, in_tissue, s, l, n_sample=64):
     sample.f = sample.f + noise * sample.f
     
     info = (in_tissue, ) #if config.model.conditional else None
-    sol, ts = simulator.reverse(model, sample, info, rtol=1e-4, atol=1e-5, num_sample=1)
+    sol, ts = simulator.reverse(model, sample, info, num_sample=1)
 
     return noise, sol, sample
 
@@ -137,10 +137,10 @@ if __name__ == '__main__':
     config = get_config()
     config.training.batch_size = 1
     config.training.sample_per_sol = 32
-    config.param.t0 = -1.0
+    config.param.t0 = 0.0
 
     workdir = 'workdir/simu2'
-    checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint-pretrain.pth")
+    checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
     model = get_model(config).to(config.device)
     ema = ExponentialMovingAverage(model.parameters(), decay=config.model.ema_rate)
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     B, N, W, H = genes.shape
     samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
 
-    mode = 2
+    mode = 1
     if mode == 0:
         import matplotlib.pyplot as plt
         
@@ -195,7 +195,7 @@ if __name__ == '__main__':
         print(state.t.item())
 
         def draw():
-            sol, ts = simulator.reverse(model, state, info, rtol=1e-4, atol=1e-5)
+            sol, ts = simulator.reverse(model, state, info)
             vmin, vmax = total[0, 0].min().item(), total[0, 0].max().item()
             
             n = len(sol) + 1  # number of images (sol + total)

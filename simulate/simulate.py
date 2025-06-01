@@ -45,6 +45,9 @@ class Simulator:
         self.rev_method = config.reverse.method
         self.sample_per_sol = config.training.sample_per_sol
 
+        self.rtol = config.model.rtol
+        self.atol = config.model.atol
+
     def simulate_end(self, genes, in_tissue):
         num_steps = int((self.param.t2 - self.param.t1) / self.param.dt)
         f = genes                                   # TODO: flatten all multi-genes
@@ -118,14 +121,14 @@ class Simulator:
             random.shuffle(result)
         return result
     
-    def reverse(self, model, state, info, rtol=1e-7, atol=1e-9, num_sample=5):
+    def reverse(self, model, state, info, num_sample=5):
         from torchdiffeq import odeint
 
         t = torch.linspace(state.t.item(), self.param.t0, num_sample+1)
         node = NODE(model, info)
         # noise = torch.randn_like(state.f) * 0.01 * info[0]
         with torch.no_grad():
-            sol = odeint(node, state.f, t, rtol=rtol, atol=atol)
+            sol = odeint(node, state.f, t, rtol=self.rtol, atol=self.atol)
             return sol, t
 
     def reverse_euler(self, model, state, info, stride=1, exp=2.0):
@@ -160,7 +163,7 @@ class Simulator:
             f = f - df_dt * dt
         return f
 
-    def reverse_adjoint_shooting(self, model, states, info, rtol=1e-7, atol=1e-9):
+    def reverse_adjoint_shooting(self, model, states, info):
         from torchdiffeq import odeint_adjoint
 
         f = states[-1].f
@@ -168,10 +171,10 @@ class Simulator:
         node = NODE(model, info)
         options = {"step_size" : self.param.dt * 10}
         # sol = odeint_adjoint(node, f, ts, method="midpoint", options=options)
-        sol = odeint_adjoint(node, f, ts, rtol=rtol, atol=atol)
+        sol = odeint_adjoint(node, f, ts, rtol=self.rtol, atol=self.atol)
         return sol
 
-    def reverse_aca_shooting(self, model, state1, state2, info, rtol=1e-7, atol=1e-9):
+    def reverse_aca_shooting(self, model, state1, state2, info):
         from TorchDiffEqPack import odesolve_adjoint_sym12 as odesolve
 
         f = state1.f
@@ -182,8 +185,8 @@ class Simulator:
         options.update({'h': None})
         options.update({'t0': state1.t})
         options.update({'t1': state2.t})
-        options.update({'rtol': 1e-3})
-        options.update({'atol': 1e-3})
+        options.update({'rtol': self.rtol})
+        options.update({'atol': self.atol})
         options.update({'print_neval': False})
         options.update({'neval_max': 1e5})
         options.update({'t_eval':None})

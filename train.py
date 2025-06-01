@@ -267,7 +267,7 @@ if __name__ == '__main__':
         print(state.t.item())
 
         def draw():
-            sol, ts = simulator.reverse(model, state, info, rtol=1e-4, atol=1e-5)
+            sol, ts = simulator.reverse(model, state, info)
             vmin, vmax = total[0, 0].min().item(), total[0, 0].max().item()
             
             n = len(sol) + 1  # number of images (sol + total)

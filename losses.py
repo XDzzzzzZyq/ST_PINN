@@ -144,7 +144,7 @@ def get_shooting_step_fn(simulator, train, optimize_fn=None):
         else:
             model.eval()        
         
-        pred = simulator.reverse_adjoint_shooting(model, samples, info, rtol=1e-4, atol=1e-5)
+        pred = simulator.reverse_adjoint_shooting(model, samples, info)
         targ = torch.stack([sample.f for sample in samples[::-1]]).to(pred.device)
         return distance(pred, targ)
 

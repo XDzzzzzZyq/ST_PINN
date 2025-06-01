@@ -50,6 +50,9 @@ def get_default_configs():
     model.embedding_type = 'fourier'
     
     model.level_feature_nums = [16, 32, 64, 96] # 4 levels of features for Unet_lite
+
+    model.rtol = 1e-4
+    model.atol = 1e-5
     
     # parameters
     config.param = param = ml_collections.ConfigDict()
