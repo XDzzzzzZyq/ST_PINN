@@ -31,9 +31,12 @@ def poisson_resample(model, simulator, genes, in_tissue, s, l, n_sample=64):
     return noise, sol, sample
 
 def deblur(config, workdir, tardir):
-    config.param.Re_min = config.param.Re_max = 1004.1
+    config.param.Re_min = config.param.Re_max = 1004.3
     config.data.poisson_ratio_min = config.data.poisson_ratio_max = 0.3
     config.param.t0 = 0.0
+
+    print(config.model)
+    print(config.reverse)
 
     checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", "checkpoint.pth")
     simulator = Simulator(config)
@@ -54,8 +57,8 @@ def deblur(config, workdir, tardir):
 
     mode = 1
     if mode == 0:
-        s = 4.0  # TODO: Infered Sigma
-        l = 10.0
+        s = 10.0  # TODO: Infered Sigma
+        l = 0.2
 
         noise, sol, sample = poisson_resample(model, simulator, genes, in_tissue, s, l, n_sample)
         pred = sol[1].mean(dim=0).unsqueeze(0)
@@ -66,17 +69,19 @@ def deblur(config, workdir, tardir):
         for i in range(5):
             axe[0,i].imshow(sol[1, i, 0].cpu())
         axe[1, 0].imshow(total[0, 0].cpu())
-        axe[1, 1].imshow(noise[0, 0].cpu())
-        axe[1, 2].imshow(sample.f[0, 0].cpu())
-        axe[1, 3].imshow(pred[0, 0].cpu())
+        axe[1, 1].imshow(sample.f[0, 0].cpu())
+        axe[1, 2].imshow(pred[0, 0].cpu())
+        axe[1, 3].imshow(density[0, 0].cpu())
         axe[1, 4].imshow(in_tissue[0, 0].cpu())
 
         os.makedirs(f"{workdir}/plots/resample", exist_ok=True)
         plt.savefig(f"{workdir}/plots/resample/resample | s : {s} | f : {l}.png")
     elif mode == 1:
-        s_list = [7.5, 10.0, 15, 20.0]
-        l_list = [2.5, 5.0, 7.5, 10.0]
+        s_list = config.reverse.s_list
+        l_list = config.reverse.l_list
+
         mse_loss = torch.nn.MSELoss()
+        result = []
 
         import matplotlib.pyplot as plt
         fig, axes = plt.subplots(len(s_list), len(l_list), figsize=(16, 16))  # 4x4 grid
@@ -89,13 +94,15 @@ def deblur(config, workdir, tardir):
                 ax = axes[i, j]  # access subplot at row i, column j
 
                 # Run the function with current parameters
-                noise, sol, sample = poisson_resample(model, simulator, genes, in_tissue, s, l)
+                noise, sol, sample = poisson_resample(model, simulator, genes, in_tissue, s, l, n_sample)
                 pred = sol[1].mean(dim=0).unsqueeze(0)
 
                 # Customize this part depending on what you want to visualize
                 # For example, show the predicted sample (assuming 1D or 2D)
                 ax.imshow(pred[0, 0].cpu(), vmin=vmin, vmax=vmax)
                 loss = mse_loss(pred, density).item()
+
+                result.append({'s':s, 'l':l, 'sample' : sol[1]})
 
                 ax.set_title(f's={s}, l={l}, loss={loss / 1e-3:.3f}e-3', fontsize=10)
                 loss_table[i, j] = loss
@@ -117,15 +124,24 @@ def deblur(config, workdir, tardir):
         plt.savefig(f"{workdir}/plots/resample/grid | Re : {config.param.Re_min} | Poi : {config.data.poisson_ratio_max}.png")
 
         fig, axe = plt.subplots(nrows=1, ncols=5, figsize=(40, 10))
-        axe[0].imshow(density[0, 0].cpu())
+        axe[0].imshow(density[0, 0].cpu(), vmin=vmin, vmax=vmax)
         axe[1].imshow(genes[0, 0].cpu())
         axe[2].imshow(sample.f[0, 0].cpu())
-        axe[3].imshow(sol[1, 0, 0].cpu())
+        axe[3].imshow(sol[1, 0, 0].cpu(), vmin=vmin, vmax=vmax)
         axe[4].imshow(loss_table)
         fig.text(0.5, 0.02, f"No preturb est : loss = {loss / 1e-3:.3f}e-3 | Original : loss = {ori_loss / 1e-3:.3f}e-3 | No reverse : loss = {nd_loss / 1e-3:.3f}e-3 | t= = {config.param.t0}",
          ha='center', va='center', fontsize=12)
         plt.savefig(f"{workdir}/plots/resample/grid | Re : {config.param.Re_min} | Poi : {config.data.poisson_ratio_max} compare.png")
 
+        result_all = {
+            'in_tissue' : in_tissue, 
+            'density' : density, 
+            'total' : total, 
+            'genes' : genes,
+            'result' : result
+        }
+
+        torch.save(result_all, f"{workdir}/plots/resample/analysis | Re : {config.param.Re_min} | Poi : {config.data.poisson_ratio_max}.pth")
         
 
 
@@ -157,7 +173,7 @@ if __name__ == '__main__':
     B, N, W, H = genes.shape
     samples = simulator.simulate(genes.reshape(B*N, 1, W, H), in_tissue.repeat(N,1,1,1), shuffle=False)
 
-    mode = 1
+    mode = 2
     if mode == 0:
         import matplotlib.pyplot as plt
         

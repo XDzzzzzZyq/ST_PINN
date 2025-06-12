@@ -15,4 +15,7 @@ def get_config():
     config.model.rtol = 1e-3
     config.model.atol = 1e-3
 
+    config.reverse.s_list = [5.0, 7.5, 10, 15.0]
+    config.reverse.l_list = [0.05, 0.2, 1.0, 5.0]
+
     return config

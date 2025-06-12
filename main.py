@@ -53,7 +53,7 @@ def main(argv):                         # tensorboard --logdir=workdir/large/ten
         # TODO: Evaluation pipeline
         pass
     elif FLAGS.mode == "deblur":        # python main.py --config config/large_configs.py --mode deblur --workdir workdir/large
-        from deblur import deblur
+        from deblur import deblur       # python main.py --config config/combine_configs.py --mode deblur --workdir workdir/simu2
         deblur(FLAGS.config, FLAGS.workdir, FLAGS.eval_folder)
         pass
     else:

@@ -79,6 +79,10 @@ def get_default_configs():
     reverse.method = 'dopri5' # ['None', 'euler', 'midpoint', 'rk4', 'dopri5', ...] https://github.com/rtqichen/torchdiffeq
     reverse.node = 'adjoint' # ['adjoint', 'aca'] 
     
+    # Poisson Resampling
+    reverse.s_list = [7.5, 10.0, 15, 20.0]
+    reverse.l_list = [2.5, 5.0, 7.5, 10.0]
+    
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
     optim.weight_decay = 0.0
