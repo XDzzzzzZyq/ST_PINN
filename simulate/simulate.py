@@ -80,13 +80,16 @@ class Simulator:
         v_rand = torch.ones(in_tissue.shape[0], device=in_tissue.device).uniform_(self.param.v_min, self.param.v_max)[:, None, None, None]
         p_rand = torch.ones(in_tissue.shape[0], device=in_tissue.device).uniform_(self.param.p_min, self.param.p_max)[:, None, None, None]
 
-        f = genes                                   # TODO: flatten all multi-genes
+        f = genes
         v = (1.1-in_tissue).repeat(1,2,1,1) * v_rand
         p = in_tissue * p_rand
 
-        # TODO: Spatially variate Re 
         Re = torch.empty(f.shape[0], device=f.device)
-        Re = Re.uniform_(math.log(self.param.Re_min), math.log(self.param.Re_max)).exp()[:, None, None, None]
+        Re = Re.uniform_(math.log(self.param.Re_min), math.log(self.param.Re_max))[:, None, None, None]
+        if self.param.const_Re:
+            Re = Re.exp()
+        else:
+            Re = ((Re + 2) * in_tissue + Re * (1-in_tissue)).exp()
         dt, dx = self.param.dt, self.param.dx
         df_dx, df_dy = ns_step.diff(f, dx)
         dv_dx, dv_dy = ns_step.diff(v, dx)

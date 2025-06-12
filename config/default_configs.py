@@ -73,6 +73,7 @@ def get_default_configs():
     
     param.Re_min = 1000.0
     param.Re_max = 10000.0
+    param.const_Re = False
 
     # reverse
     config.reverse = reverse = ml_collections.ConfigDict()
