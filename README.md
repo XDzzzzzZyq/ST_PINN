@@ -1,7 +1,11 @@
 # Sample Reconstruction of Spatial Transcriptomics Data through Reversed Fluid Neural ODE Process
 
 ST-PINN is a deep learning model that will reconstruct the sparse Poisson samples through a resampling process based on **Reversed Fluid Neural ODE Process**. 
-It generally comprises a reverse Neural operator that could accurately send a diffused count field back to the original state. With perturbation, 
+It generally comprises a reverse Neural operator that could accurately send a diffused count field back to the original state. With perturbation on the diffused state, this model is expected to unbiasly estimate the origional density field based on the reconstructed count samples.
+
+![Comparison](figs/grid_Re_1004.0_Poi_0.7_compare.png)
+![Samples](figs/grid_Re_1004.0_Poi_0.7.png)
+
 
 ## Configuration
 Currently, there are several configurations for demo purposes. 
